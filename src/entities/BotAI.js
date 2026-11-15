@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { ABILITIES } from "../data/abilities.js";
 
 const THINK_INTERVAL = 110;
 const ATTACK_DISTANCE = 108;
@@ -12,6 +13,8 @@ export default class BotAI {
     this.nextThinkAt = 0;
     this.specialReadyAt = 0;
     this.jumpReadyAt = 0;
+    this.nextPaceAt = 0;
+    this.paceDirection = 1;
   }
 
   update(time, dt) {
@@ -130,7 +133,7 @@ export default class BotAI {
       (playerRecovering || playerAirborne || distance > 98)
     ) {
       if (scene.startBotAttack("special")) {
-        this.specialReadyAt = time + 3900;
+        this.specialReadyAt = time + ABILITIES.special.botCooldownMs;
         return;
       }
     }
@@ -145,7 +148,7 @@ export default class BotAI {
       time >= scene.botThrowReadyAt &&
       scene.startBotProjectile()
     ) {
-      scene.botThrowReadyAt = time + 3500;
+      scene.botThrowReadyAt = time + scene.getBotThrowCooldown();
     }
   }
 
@@ -180,7 +183,7 @@ export default class BotAI {
       threat.projectile.object.x,
       threat.projectile.object.y,
       fighter,
-      7
+      ABILITIES.parry.contactRadius
     );
 
     if (
@@ -192,8 +195,8 @@ export default class BotAI {
       threat.projectile.botParryAttempted = true;
 
       if (Math.random() < 0.5) {
-        scene.botParryUntil = time + 80;
-        scene.botParryCooldownUntil = time + 1000;
+        scene.botParryUntil = time + ABILITIES.parry.windowMs;
+        scene.botParryCooldownUntil = time + ABILITIES.parry.botCooldownMs;
         fighter.setPose("parry", 60);
         scene.tryReflectProjectiles(time);
 
@@ -239,7 +242,14 @@ export default class BotAI {
     const bot = scene.dummyState;
     const fighter = scene.opponentFighter;
 
-    if (fighter.isActing) return;
+    if (fighter.isActing) {
+      bot.vx = Phaser.Math.Linear(
+        bot.vx,
+        towardPlayer * 55,
+        Math.min(1, 4 * dt)
+      );
+      return;
+    }
 
     if (time < scene.botThrowPoseUntil) {
       bot.vx = Phaser.Math.Linear(bot.vx, 0, Math.min(1, 8 * dt));
@@ -273,6 +283,23 @@ export default class BotAI {
       direction = towardPlayer;
     } else if (distance < KEEP_DISTANCE - 22) {
       direction = -towardPlayer;
+    }
+
+    if (direction === 0) {
+      if (time >= this.nextPaceAt) {
+        const awayFromPlayer = distance <= KEEP_DISTANCE
+          ? -towardPlayer
+          : towardPlayer;
+        this.paceDirection = Math.random() < 0.65
+          ? awayFromPlayer
+          : -awayFromPlayer;
+
+        if (bot.x < 100) this.paceDirection = 1;
+        if (bot.x > scene.scale.width - 100) this.paceDirection = -1;
+        this.nextPaceAt = time + 650 + Math.random() * 450;
+      }
+
+      direction = this.paceDirection;
     }
 
     const targetSpeed = direction * (incomingActive ? 260 : 240);

@@ -1,14 +1,14 @@
 import Phaser from "phaser";
 import assetManifest from "../assets/data/assets.json";
+import diwaliArena from "../maps/diwaliArena.js";
 
 // Static imports let Vite rewrite these files to valid URLs in both dev and build output.
-import arenaBackgroundUrl from "../assets/arena-background/arena-battle-diwali.jpg";
 import swordEffectUrl from "../assets/effects/sword-effects.gif";
 import loginArenaUrl from "../assets/login-arena/login-arena.jpg";
 import weaponUrl from "../assets/wepo/wepe.png";
 
 const assetUrls = {
-  arena_background: arenaBackgroundUrl,
+  arena_background: diwaliArena.backgroundUrl,
   sword_effect: swordEffectUrl,
   login_arena: loginArenaUrl,
   weapon: weaponUrl
