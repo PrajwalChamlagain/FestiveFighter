@@ -25,4 +25,8 @@ gear are saved in the browser; development profiles start with ample coins.
 
 See [the gameplay and code guide](./docs/GAMEPLAY_GUIDE.md) for the startup
 flow, scene responsibilities, controls, combat rules, and ability modules.
-    
+
+
+Run the server first npm.cmd run server
+In another terminal run npm.cmd run dev -- --host 0.0.0.0
+
