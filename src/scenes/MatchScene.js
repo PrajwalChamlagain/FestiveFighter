@@ -13,6 +13,7 @@ import walkingSpriteSheetUrl from "../assets/sprites/Walking.png";
 import spittingSpriteSheetUrl from "../assets/sprites/Spitting.png";
 import rocketBigSpriteUrl from "../assets/sprites/firework-rocket-big.png";
 import explosionSpriteSheetUrl from "../assets/sprites/explosion.png";
+import { PROJECTILE_STEP_SECONDS, advanceProjectile } from "../../shared/projectilePhysics.mjs";
 
 const MAX_HEALTH = 150;
 
@@ -28,7 +29,13 @@ export default class MatchScene extends Phaser.Scene {
 
   init(data) {
     this.username = data?.username?.trim() || "Player";
-    this.mode = data?.mode || "bot";
+    this.lanMatch = data?.lanMatch || null;
+    this.lanClient = data?.lanClient || null;
+    this.mode = this.lanMatch ? "lan" : data?.mode || "bot";
+    this.lanSlot = this.lanMatch?.slot ?? 0;
+    this.remotePlayerId = this.lanMatch?.opponentId || null;
+    this.nextAttackId = 0;
+    this.remoteAttackIds = new Set();
     this.playerData = CHARACTERS.find(character => character.id === data?.characterId) || CHARACTERS[0];
     this.botCharacter = CHARACTERS.find(character => character.id === data?.opponentCharacterId) || CHARACTERS[1];
     this.weapon = WEAPONS.find(weapon => weapon.id === data?.weaponId) || WEAPONS[0];
@@ -77,7 +84,7 @@ export default class MatchScene extends Phaser.Scene {
     this.dummyStunnedUntil = 0;
 
     this.playerState = {
-      x: 255,
+      x: this.mode === "lan" && this.lanSlot === 1 ? 705 : 255,
       y: this.floorY,
       vx: 0,
       vy: 0,
@@ -87,7 +94,7 @@ export default class MatchScene extends Phaser.Scene {
     };
 
     this.dummyState = {
-      x: 705,
+      x: this.mode === "lan" && this.lanSlot === 1 ? 255 : 705,
       y: this.floorY,
       vx: 0,
       vy: 0,
@@ -215,7 +222,7 @@ export default class MatchScene extends Phaser.Scene {
       this.playerData
     );
     this.playerFighter.setScale(this.fighterScale);
-    this.playerFighter.setFacing(1);
+    this.playerFighter.setFacing(this.mode === "lan" && this.lanSlot === 1 ? -1 : 1);
     this.playerFighter.setDepth(10);
 
     this.opponentFighter = new SpriteFighter(
@@ -225,7 +232,7 @@ export default class MatchScene extends Phaser.Scene {
       this.botCharacter
     );
     this.opponentFighter.setScale(this.fighterScale);
-    this.opponentFighter.setFacing(-1);
+    this.opponentFighter.setFacing(this.mode === "lan" && this.lanSlot === 1 ? 1 : -1);
     this.opponentFighter.setDepth(10);
     this.botAI = new BotAI(this);
     this.spitAbility = new SpitAbility(this);
@@ -253,7 +260,12 @@ export default class MatchScene extends Phaser.Scene {
     );
 
     this.events.once("shutdown", this.cleanup, this);
-    this.showMessage(this.mode === "bot" ? "FIGHT!" : "PRACTICE MODE");
+    if (this.mode === "lan") {
+      this.setupLanMatch();
+      this.showMessage("MOVEMENT SYNC ONLY · COMBAT IS LOCAL");
+    } else {
+      this.showMessage(this.mode === "bot" ? "FIGHT!" : "PRACTICE MODE");
+    }
   }
 
   // ==========================================
@@ -370,9 +382,9 @@ export default class MatchScene extends Phaser.Scene {
       }
     ).setDepth(30);
 
-    this.add.text(
+    this.opponentNameText = this.add.text(
       926, 28,
-      this.botCharacter.name,
+      this.mode === "lan" ? "REMOTE PLAYER" : this.botCharacter.name,
       {
         fontSize: "14px",
         fontStyle: "bold",
@@ -380,10 +392,10 @@ export default class MatchScene extends Phaser.Scene {
       }
     ).setOrigin(1, 0).setDepth(30);
 
-    this.add.text(
+    this.opponentLoadoutText = this.add.text(
       926,
       46,
-      `${this.botWeapon.name}${this.botParryTool ? " · THALI" : ""}`,
+      this.mode === "lan" ? "MELEE ONLY · PROJECTILES LOCAL" : `${this.botWeapon.name}${this.botParryTool ? " · THALI" : ""}`,
       {
         fontSize: "8px",
         color: "#d8bd91",
@@ -894,6 +906,176 @@ export default class MatchScene extends Phaser.Scene {
     });
   }
 
+  setupLanMatch() {
+    this.lanConnected = Boolean(this.lanClient?.connected);
+    this.remoteMovement = null;
+    this.nextMovementAt = 0;
+    this.lanStatusText = this.add.text(
+      this.scale.width / 2,
+      88,
+      "LAN CONNECTED - MELEE & WEAPON SYNC",
+      {
+        fontSize: "9px",
+        fontStyle: "bold",
+        color: "#9fe3a7",
+        backgroundColor: "#201421",
+        padding: { x: 6, y: 3 }
+      }
+    ).setOrigin(0.5).setDepth(40);
+
+    this.lanSubscriptions = [
+      this.lanClient.on("player-moved", update => {
+        if (update?.playerId !== this.remotePlayerId || !update.state) return;
+        this.remoteMovement = update.state;
+      }),
+      this.lanClient.on("attack-start", attack => {
+        this.receiveLanAttackStart(attack);
+      }),
+      this.lanClient.on("attack-result", result => {
+        this.receiveLanAttackResult(result);
+      }),
+      this.lanClient.on("health", update => {
+        this.receiveLanHealth(update);
+      }),
+      this.lanClient.on("projectile:launched", event => this.receiveLanProjectileLaunch(event)),
+      this.lanClient.on("projectile:impact", event => this.receiveLanProjectileImpact(event)),
+      this.lanClient.on("projectile:destroyed", event => this.removeLanProjectile(event?.projectileId)),
+      this.lanClient.on("projectile:deflected", event => this.receiveLanProjectileDeflection(event)),
+      this.lanClient.on("weapon:rejected", event => this.showMessage(`WEAPON REJECTED · ${String(event?.reason || "unavailable").toUpperCase()}`)),
+      this.lanClient.on("parry:started", event => this.receiveLanParry(event)),
+      this.lanClient.on("parry:rejected", event => this.showMessage(`PARRY REJECTED · ${String(event?.reason || "unavailable").toUpperCase()}`)),
+      this.lanClient.on("opponent-disconnected", () => {
+        this.handleLanDisconnect("OPPONENT DISCONNECTED");
+      }),
+      this.lanClient.on("disconnected", () => {
+        this.handleLanDisconnect("SERVER CONNECTION LOST");
+      }),
+      this.lanClient.on("connection-error", () => {
+        this.handleLanDisconnect("SERVER CONNECTION LOST");
+      })
+    ];
+  }
+
+  handleLanDisconnect(message) {
+    if (!this.lanConnected) return;
+    this.lanConnected = false;
+    this.projectiles.filter(p => p.networked).forEach(p => p.object.destroy());
+    this.projectiles = this.projectiles.filter(p => !p.networked);
+    this.spitAbility?.clearNetworkShots();
+    this.lanStatusText?.setText(`${message} · LOCAL PLAY CONTINUES`)
+      .setColor("#ffaaa0");
+    this.showMessage(`${message} · LOCAL PLAY CONTINUES`);
+  }
+
+  sendLanMovement(time) {
+    if (!this.lanConnected || time < this.nextMovementAt) return;
+    this.nextMovementAt = time + 33;
+
+    const pose = this.playerFighter.currentPose === "hit"
+      ? "hit"
+      : !this.playerState.grounded
+        ? "jump"
+        : this.isCrouching()
+          ? "crouch"
+          : Math.abs(this.playerState.vx) > 25
+            ? "walk"
+            : "idle";
+
+    this.lanClient?.sendMovement({
+      x: this.playerState.x,
+      y: this.playerState.y,
+      vx: this.playerState.vx,
+      vy: this.playerState.vy,
+      grounded: this.playerState.grounded,
+      facing: this.playerFighter.facing,
+      pose,
+      crouching: this.isCrouching()
+    });
+  }
+
+  updateRemoteFighter(dt) {
+    if (!this.remoteMovement) return;
+
+    const amount = 1 - Math.exp(-14 * dt);
+    this.dummyState.x = Phaser.Math.Linear(this.dummyState.x, this.remoteMovement.x, amount);
+    this.dummyState.y = Phaser.Math.Linear(this.dummyState.y, this.remoteMovement.y, amount);
+    this.dummyState.vx = this.remoteMovement.vx;
+    this.dummyState.vy = this.remoteMovement.vy;
+    this.dummyState.grounded = this.remoteMovement.grounded;
+    this.opponentFighter.setPosition(this.dummyState.x, this.dummyState.y);
+    this.opponentFighter.setFacing(this.remoteMovement.facing);
+    if (this.remoteMovement.pose === "hit" && this.lastRemotePose !== "hit") {
+      this.opponentFighter.reactToHit();
+    } else if (!this.opponentFighter.isActing && this.remoteMovement.pose !== "hit") {
+      this.opponentFighter.setPose(this.remoteMovement.pose);
+    }
+    this.lastRemotePose = this.remoteMovement.pose;
+  }
+
+  receiveLanAttackStart(attack) {
+    if (
+      attack?.playerId !== this.remotePlayerId ||
+      !Number.isSafeInteger(attack.attackId) ||
+      this.remoteAttackIds.has(attack.attackId)
+    ) {
+      return;
+    }
+
+    this.remoteAttackIds.add(attack.attackId);
+    if (this.remoteAttackIds.size > 32) {
+      this.remoteAttackIds.delete(this.remoteAttackIds.values().next().value);
+    }
+    this.opponentFighter.setFacing(attack.facing);
+    this.opponentFighter.perform(attack.move);
+  }
+
+  receiveLanAttackResult(result) {
+    if (
+      result?.playerId !== this.remotePlayerId ||
+      !this.remoteAttackIds.has(result.attackId)
+    ) {
+      return;
+    }
+
+    this.remoteAttackIds.delete(result.attackId);
+    if (!result.hit) return;
+    if (result.blocked) {
+      this.showMessage("MELEE BLOCKED!");
+      return;
+    }
+
+    const actualDamage = this.damagePlayer(result.damage);
+    if (actualDamage <= 0) return;
+
+    this.playerState.vx += result.knockbackX;
+    this.playerState.vy += result.knockbackY;
+    this.playerState.grounded = false;
+    this.playerFighter.reactToHit();
+    this.lanClient?.sendHealth(this.playerHealth);
+
+    this.cameras.main.shake(100, result.damage > 25 ? 0.011 : 0.005);
+    this.createHitEffect(
+      this.playerState.x,
+      this.playerState.y - 110,
+      result.zone === "head" ? 0xffe28a : 0xffa75d
+    );
+    this.showMessage(`${result.zone.toUpperCase()} HIT · -${actualDamage}`);
+  }
+
+  receiveLanHealth(update) {
+    if (
+      update?.playerId !== this.remotePlayerId ||
+      !Number.isInteger(update.health) ||
+      update.health < 0 ||
+      update.health > MAX_HEALTH ||
+      update.health >= this.dummyHealth
+    ) {
+      return;
+    }
+
+    this.damageDummy(this.dummyHealth - update.health);
+  }
+
   // ==========================================
   // KEYBOARD CONTROLS
   // ==========================================
@@ -1094,9 +1276,19 @@ export default class MatchScene extends Phaser.Scene {
       this.playerState.vx += this.playerFighter.facing * move.lunge;
     }
 
-    return this.playerFighter.perform(name, {
-      onImpact: move => this.resolveMelee(move)
+    const attackId = this.mode === "lan" ? ++this.nextAttackId : null;
+    const started = this.playerFighter.perform(name, {
+      onImpact: move => this.resolveMelee(move, attackId)
     });
+
+    if (started && attackId !== null) {
+      this.lanClient?.sendAttackStart({
+        attackId,
+        move: name,
+        facing: this.playerFighter.facing
+      });
+    }
+    return started;
   }
 
   fireSpit() {
@@ -1205,7 +1397,7 @@ export default class MatchScene extends Phaser.Scene {
   // BODY-PART HIT DETECTION
   // ==========================================
 
-  resolveMelee(move) {
+  resolveMelee(move, attackId = null) {
     const attackBox =
       this.playerFighter.getAttackHitbox(move);
 
@@ -1220,6 +1412,17 @@ export default class MatchScene extends Phaser.Scene {
     });
 
     if (possibleHits.length === 0) {
+      if (this.mode === "lan" && attackId !== null) {
+        this.lanClient?.sendAttackResult({
+          attackId,
+          hit: false,
+          blocked: false,
+          zone: null,
+          damage: 0,
+          knockbackX: 0,
+          knockbackY: 0
+        });
+      }
       this.showMessage("MISS");
       return;
     }
@@ -1241,6 +1444,32 @@ export default class MatchScene extends Phaser.Scene {
     const damage = Math.round(
       move.damage * multipliers[hitZone]
     );
+
+    if (this.mode === "lan" && attackId !== null) {
+      const blocked = this.remoteMovement?.crouching === true && hitZone !== "legs";
+      this.lanClient?.sendAttackResult({
+        attackId,
+        hit: true,
+        blocked,
+        zone: hitZone,
+        damage: blocked ? 0 : damage,
+        knockbackX: blocked ? 0 : this.playerFighter.facing * move.knockback,
+        knockbackY: blocked ? 0 : -move.lift
+      });
+
+      this.cameras.main.shake(100, damage > 25 ? 0.011 : 0.005);
+      this.createHitEffect(
+        this.dummyState.x,
+        this.dummyState.y - 110,
+        hitZone === "head" ? 0xffe28a : 0xffa75d
+      );
+      this.showMessage(blocked
+        ? "MELEE BLOCKED!"
+        : `${move.name} · ${hitZone.toUpperCase()} -${damage}`);
+      this.lastAttackBox = attackBox;
+      this.lastAttackBoxUntil = this.time.now + 180;
+      return;
+    }
 
     this.damageDummy(damage);
 
@@ -1285,6 +1514,10 @@ export default class MatchScene extends Phaser.Scene {
     const armed = this.getArmedProjectile();
 
     if (armed) {
+      if (this.mode === "lan" && armed.projectileId) {
+        this.lanClient?.requestDetonation(armed.projectileId);
+        return;
+      }
       this.detonateProjectile(armed, true);
       return;
     }
@@ -1312,6 +1545,11 @@ export default class MatchScene extends Phaser.Scene {
       this.showMessage(
         `${this.weapon.name} RECHARGING · ${((this.throwReadyAt - now) / 1000).toFixed(1)}s`
       );
+      return;
+    }
+
+    if (this.mode === "lan") {
+      this.lanClient?.requestProjectile("firework", { weaponId: this.weapon.id });
       return;
     }
 
@@ -1379,6 +1617,17 @@ export default class MatchScene extends Phaser.Scene {
     if (this.playerFighter.isActing || this.time.now < this.throwReadyAt) {
       this.showMessage("ROCKET LAUNCH INTERRUPTED");
       return false;
+    }
+
+    if (this.mode === "lan") {
+      this.lanClient?.requestProjectile("anar", {
+        weaponId: this.weapon.id,
+        originX: shot.originX,
+        originY: shot.originY,
+        velocityX: shot.velocityX,
+        velocityY: shot.velocityY
+      });
+      return true;
     }
 
     const direction = Math.sign(shot.velocityX) || this.playerFighter.facing;
@@ -1462,6 +1711,107 @@ export default class MatchScene extends Phaser.Scene {
     this.projectiles.push(state);
 
     return state;
+  }
+
+  receiveLanProjectileLaunch(event) {
+    if (!event?.projectileId || this.projectiles.some(p => p.projectileId === event.projectileId)) return;
+    const owner = event.ownerId === this.lanMatch?.playerId ? "player" : "opponent";
+    if (event.kind === "spit") {
+      this.spitAbility?.addNetworkShot(event, owner);
+      if (owner === "opponent") this.opponentFighter.setPose("spit", event.poseDurationMs || 320);
+      else this.playerFighter.setPose("spit", event.poseDurationMs || 320);
+      return;
+    }
+    const data = WEAPON_PHYSICS[event.weaponId];
+    if (!data) return;
+    const state = this.spawnProjectile(event.x, event.y, Math.sign(event.vx) || 1, data,
+      owner, event.vy, event.canManualDetonate, event.crouchedDrop);
+    Object.assign(state, {
+      projectileId: event.projectileId,
+      networked: true,
+      serverTime: event.serverTime,
+      vx: event.vx,
+      vy: event.vy,
+      gravity: event.gravity,
+      fuse: event.fuse,
+      age: event.age || 0,
+      damage: event.damage,
+      radius: event.radius,
+      selfDamage: event.selfDamage,
+      selfBoost: event.selfBoost,
+      selfKnockback: event.selfKnockback,
+      enemyKnockback: event.enemyKnockback,
+      enemyLift: event.enemyLift,
+      acceleration: event.acceleration,
+      maxSpeed: event.maxSpeed,
+      color: event.color,
+      bounces: event.bounces || 0,
+      ownerId: event.ownerId,
+      canManualDetonate: owner === "player" && event.canManualDetonate
+    });
+    if (owner === "player") {
+      this.throwReadyAt = this.time.now + event.cooldownMs;
+      this.playerState.vx += event.recoilX || 0;
+      this.playerState.vy += event.recoilY || 0;
+      if (this.playerState.vy < 0) this.playerState.grounded = false;
+      this.playerFighter.setPose("throw", 85);
+    } else {
+      this.opponentFighter.setPose("throw", 85);
+    }
+    this.createHitEffect(event.x, event.y, event.color);
+  }
+
+  receiveLanProjectileDeflection(event) {
+    const projectile = this.projectiles.find(p => p.projectileId === event?.projectileId);
+    if (!projectile) return;
+    Object.assign(projectile, {
+      ownerId: event.ownerId,
+      owner: event.ownerId === this.lanMatch?.playerId ? "player" : "opponent",
+      vx: event.vx, vy: event.vy, damage: event.damage, color: event.color
+    });
+    projectile.object.setPosition(event.x, event.y);
+    this.createHitEffect(event.x, event.y, event.color);
+    this.cameras.main.shake(90, 0.005);
+    if (projectile.owner === "player") this.showPerfectParry();
+  }
+
+  removeLanProjectile(projectileId) {
+    const projectile = this.projectiles.find(p => p.projectileId === projectileId);
+    if (!projectile) return;
+    projectile.object.destroy();
+    this.projectiles = this.projectiles.filter(p => p !== projectile);
+    this.spitAbility?.removeNetworkShot(projectileId);
+  }
+
+  receiveLanProjectileImpact(event) {
+    if (!event?.projectileId || this.resolvedProjectileIds?.has(event.projectileId)) return;
+    this.resolvedProjectileIds ||= new Set();
+    this.resolvedProjectileIds.add(event.projectileId);
+    const projectile = this.projectiles.find(p => p.projectileId === event.projectileId);
+    const x = event.x ?? projectile?.object.x ?? 0;
+    const y = event.y ?? projectile?.object.y ?? 0;
+    const color = event.color ?? projectile?.color ?? 0xc3ee7a;
+    const radius = event.radius || projectile?.radius || 55;
+    if (projectile) this.removeLanProjectile(event.projectileId);
+    else this.spitAbility?.removeNetworkShot(event.projectileId);
+    for (const outcome of event.outcomes || []) {
+      if (outcome.playerId === this.lanMatch?.playerId) {
+        this.damagePlayer(Math.max(0, this.playerHealth - outcome.health));
+        Object.assign(this.playerState, { vx: outcome.vx, vy: outcome.vy, grounded: outcome.grounded });
+        this.playerFighter.reactToHit();
+      } else if (outcome.playerId === this.remotePlayerId) {
+        this.damageDummy(Math.max(0, this.dummyHealth - outcome.health));
+        Object.assign(this.dummyState, { vx: outcome.vx, vy: outcome.vy, grounded: outcome.grounded });
+        this.opponentFighter.reactToHit();
+      }
+    }
+    if (event.kind === "firework") {
+      const blast = this.add.circle(x, y, 10, color, 0.85).setDepth(22);
+      const inner = this.add.circle(x, y, 5, 0xffedb0, 0.95).setDepth(23);
+      this.tweens.add({ targets: blast, scale: radius / 10, alpha: 0, duration: 270, onComplete: () => blast.destroy() });
+      this.tweens.add({ targets: inner, scale: 4, alpha: 0, duration: 170, onComplete: () => inner.destroy() });
+    } else this.createHitEffect(x, y, color);
+    this.cameras.main.shake(event.kind === "firework" ? 90 : 65, event.kind === "firework" ? 0.004 : 0.0035);
   }
 
   startBotProjectile() {
@@ -1596,6 +1946,29 @@ export default class MatchScene extends Phaser.Scene {
     const remaining = [];
 
     for (const p of this.projectiles) {
+      if (this.mode === "lan" && p.networked) {
+        p.physicsAccumulator = (p.physicsAccumulator || 0) + dt;
+        while (p.physicsAccumulator >= PROJECTILE_STEP_SECONDS) {
+          const visualState = { ...p, x: p.object.x, y: p.object.y };
+          advanceProjectile(visualState, PROJECTILE_STEP_SECONDS, this.platforms, {
+            width: this.scale.width, height: this.scale.height
+          });
+          Object.assign(p, {
+            x: visualState.x, y: visualState.y, vx: visualState.vx,
+            vy: visualState.vy, age: visualState.age, bounces: visualState.bounces
+          });
+          p.object.setPosition(p.x, p.y);
+          p.physicsAccumulator -= PROJECTILE_STEP_SECONDS;
+        }
+        if (p.rocketSprite) p.rocketSprite.setRotation(Math.atan2(p.vy, p.vx) + ABILITIES.rocketAim.spriteForwardOffset);
+        else p.object.rotation += dt * 5;
+        const fusePulse = (Math.sin(this.time.now * 0.025) + 1) / 2;
+        p.glow?.setAlpha(0.2 + fusePulse * 0.55);
+        p.ember?.setAlpha(0.45 + fusePulse * 0.55);
+        p.ember?.setScale(0.8 + fusePulse * 0.65);
+        remaining.push(p);
+        continue;
+      }
       const previousY = p.object.y;
       p.age += dt;
 
@@ -1872,6 +2245,11 @@ export default class MatchScene extends Phaser.Scene {
       return;
     }
 
+    if (this.mode === "lan") {
+      this.lanClient?.requestParry();
+      return;
+    }
+
     this.parryUntil = time + ABILITIES.parry.windowMs;
     this.parryCooldownUntil = time + this.parryCooldown;
 
@@ -1881,6 +2259,7 @@ export default class MatchScene extends Phaser.Scene {
   }
 
   tryReflectProjectiles(time) {
+    if (this.mode === "lan") return;
     for (const p of this.projectiles) {
       const parriedByPlayer =
         p.owner === "cpu" &&
@@ -1923,6 +2302,17 @@ export default class MatchScene extends Phaser.Scene {
 
       this.createHitEffect(p.object.x, p.object.y, 0xffdf83);
       this.cameras.main.shake(90, 0.005);
+    }
+  }
+
+  receiveLanParry(event) {
+    if (event?.playerId === this.lanMatch?.playerId) {
+      this.parryUntil = this.time.now + event.windowMs;
+      this.parryCooldownUntil = this.time.now + event.cooldownMs;
+      this.playerFighter.setPose("parry", 60);
+      this.showMessage("PARRY! · PERFECT TIMING");
+    } else if (event?.playerId === this.remotePlayerId) {
+      this.opponentFighter.setPose("parry", 60);
     }
   }
 
@@ -2333,24 +2723,30 @@ export default class MatchScene extends Phaser.Scene {
       true
     );
 
-    this.updatePhysics(
-      this.dummyState,
-      this.opponentFighter,
-      dt,
-      false
-    );
-
-    this.resolveFighterSpacing();
+    if (this.mode === "lan") {
+      this.updateRemoteFighter(dt);
+      this.sendLanMovement(time);
+    } else {
+      this.updatePhysics(
+        this.dummyState,
+        this.opponentFighter,
+        dt,
+        false
+      );
+      this.resolveFighterSpacing();
+    }
 
     this.playerFighter.setPosition(
       this.playerState.x,
       this.playerState.y
     );
 
-    this.opponentFighter.setPosition(
-      this.dummyState.x,
-      this.dummyState.y
-    );
+    if (this.mode !== "lan") {
+      this.opponentFighter.setPosition(
+        this.dummyState.x,
+        this.dummyState.y
+      );
+    }
 
     this.rocketAim.update(this.input.activePointer);
     this.spitAbility.update(dt);
@@ -2378,6 +2774,10 @@ export default class MatchScene extends Phaser.Scene {
   // ==========================================
 
   cleanup() {
+    this.lanSubscriptions?.forEach(unsubscribe => unsubscribe());
+    this.lanSubscriptions = [];
+    this.lanClient?.destroy();
+    this.lanClient = null;
     this.projectiles.forEach(p => {
       p.object.destroy();
     });

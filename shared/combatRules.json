@@ -1,0 +1,52 @@
+{
+  "maxHealth": 150,
+  "arena": {
+    "width": 960,
+    "height": 540,
+    "fighterScale": 0.72,
+    "platforms": [
+      { "x": 0, "y": 496.875, "width": 960 },
+      { "x": 501.5625, "y": 361.875, "width": 458.4375 },
+      { "x": 437.8125, "y": 302.8125, "width": 522.1875 }
+    ]
+  },
+  "weapons": {
+    "sutli": {
+      "speed": 390, "cooldown": 3000, "fuse": 1.45, "damage": 24,
+      "radius": 85, "selfDamage": 3, "selfBoost": 650,
+      "selfKnockback": 240, "enemyKnockback": 9, "enemyLift": 2.8,
+      "recoil": 230, "upwardRecoil": 110, "gravity": 380, "color": 16738849
+    },
+    "firecracker": {
+      "speed": 205, "acceleration": 720, "maxSpeed": 650, "cooldown": 2500,
+      "fuse": 0.85, "damage": 5, "radius": 185, "selfDamage": 1,
+      "selfBoost": 1350, "selfKnockback": 720, "enemyKnockback": 3.5,
+      "enemyLift": 0.8, "recoil": 100, "upwardRecoil": 40,
+      "gravity": 470, "color": 16765503
+    },
+    "anar": {
+      "speed": 480, "aimRange": 420, "aimMinSpeed": 370,
+      "aimMaxSpeed": 650, "cooldown": 5600, "fuse": 1.9,
+      "damage": 28, "radius": 125, "selfDamage": 0, "selfBoost": 0,
+      "selfKnockback": 0, "enemyKnockback": 5, "enemyLift": 1.8,
+      "recoil": 0, "upwardRecoil": 0, "gravity": 420,
+      "spriteKey": "diwali_rocket_big", "spriteSize": 44, "color": 16728397
+    },
+    "chakri": {
+      "speed": 300, "cooldown": 2200, "fuse": 0.72, "damage": 4,
+      "radius": 115, "selfDamage": 1, "selfBoost": 820,
+      "selfKnockback": 310, "enemyKnockback": 3, "enemyLift": 0.7,
+      "recoil": 60, "upwardRecoil": 20, "gravity": 350, "color": 5560523
+    }
+  },
+  "abilities": {
+    "special": { "cooldownMs": 3400, "botCooldownMs": 3900 },
+    "parry": { "windowMs": 80, "contactRadius": 7, "cooldownMs": 1200, "botCooldownMs": 1000 },
+    "spit": {
+      "cooldownMs": 950, "damage": 15, "speed": 700,
+      "lifetimeSeconds": 1.65, "hitRadius": 10, "poseDurationMs": 320,
+      "knockback": 235, "lift": 115
+    },
+    "rocketAim": { "displaySize": 44, "spriteForwardOffset": 0.7853981633974483, "trajectoryStep": 0.06 }
+  }
+}

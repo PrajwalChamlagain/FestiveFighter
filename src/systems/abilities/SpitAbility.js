@@ -20,6 +20,11 @@ export default class SpitAbility {
       return false;
     }
 
+    if (scene.mode === "lan") {
+      scene.lanClient?.requestProjectile("spit");
+      return true;
+    }
+
     this.readyAt = now + ABILITIES.spit.cooldownMs;
     this.poseUntil = now + ABILITIES.spit.poseDurationMs;
 
@@ -54,6 +59,15 @@ export default class SpitAbility {
     const remaining = [];
 
     for (const shot of this.shots) {
+      if (shot.networked) {
+        shot.age += dt;
+        shot.x += shot.velocityX * dt;
+        shot.trail.setPosition(shot.x - Math.sign(shot.velocityX) * 8, shot.y);
+        shot.orb.setPosition(shot.x, shot.y);
+        shot.shine.setPosition(shot.x - 2, shot.y - 2);
+        remaining.push(shot);
+        continue;
+      }
       shot.age += dt;
       shot.x += shot.velocityX * dt;
       shot.trail.setPosition(shot.x - Math.sign(shot.velocityX) * 8, shot.y);
@@ -94,6 +108,33 @@ export default class SpitAbility {
     }
 
     this.shots = remaining;
+  }
+
+  addNetworkShot(event, owner) {
+    if (this.shots.some(shot => shot.projectileId === event.projectileId)) return;
+    const direction = Math.sign(event.velocityX) || 1;
+    const trail = this.scene.add.ellipse(event.x - direction * 8, event.y, 18, 8, 0x80b944, 0.28).setDepth(14);
+    const orb = this.scene.add.ellipse(event.x, event.y, 12, 8, 0xd7f5a1, 1).setStrokeStyle(2, 0x669a37, 0.95).setDepth(15);
+    const shine = this.scene.add.circle(event.x - 2, event.y - 2, 2, 0xffffff, 0.9).setDepth(16);
+    this.shots.push({
+      projectileId: event.projectileId, networked: true, owner,
+      x: event.x, y: event.y, velocityX: event.velocityX,
+      age: event.age || 0, trail, orb, shine
+    });
+    if (owner === "player") this.readyAt = this.scene.time.now + event.cooldownMs;
+  }
+
+  removeNetworkShot(projectileId) {
+    const shot = this.shots.find(item => item.projectileId === projectileId);
+    if (!shot) return;
+    this.destroyShot(shot);
+    this.shots = this.shots.filter(item => item !== shot);
+  }
+
+  clearNetworkShots() {
+    const networked = this.shots.filter(shot => shot.networked);
+    networked.forEach(shot => this.destroyShot(shot));
+    this.shots = this.shots.filter(shot => !shot.networked);
   }
 
   destroyShot(shot) {
