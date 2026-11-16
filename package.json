@@ -16,6 +16,9 @@
   },
   "keywords": [],
   "type": "commonjs",
+  "engines": {
+    "node": ">=24"
+  },
   "bugs": {
     "url": "https://github.com/ilopa8888/FestiveFighter/issues"
   },
