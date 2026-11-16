@@ -1,3 +1,5 @@
+const express = require("express");
+const { Server } = require("socket.io");
 const createHttpServer = require("./createHttpServer");
 
 const DEFAULT_PORT = 3000;
@@ -8,7 +10,7 @@ const port = Number.isInteger(requestedPort) && requestedPort > 0 && requestedPo
 const frontendPort = process.env.FRONTEND_PORT || "5173";
 
 async function startServer() {
-  const httpServer = await createHttpServer();
+  const httpServer = await createHttpServer({ express, Server });
   httpServer.on("error", error => {
     if (error.code === "EADDRINUSE") {
       console.error(`Port ${port} is already in use. Set PORT to use another port.`);

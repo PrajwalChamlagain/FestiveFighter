@@ -1,6 +1,4 @@
-const express = require("express");
 const http = require("node:http");
-const { Server } = require("socket.io");
 const MatchManager = require("./matchManager");
 const ProjectileManager = require("./projectileManager");
 const combatRules = require("../shared/combatRules.json");
@@ -27,7 +25,9 @@ function isAllowedFrontendOrigin(origin) {
   }
 }
 
-async function createHttpServer() {
+// npm packages are injected by the caller so that bundled entry points (such as
+// the Netlify Server entry, which uses ESM imports) can resolve them reliably.
+async function createHttpServer({ express, Server }) {
   const app = express();
   app.get("/health", (_request, response) => {
     response.json({ status: "ok" });
