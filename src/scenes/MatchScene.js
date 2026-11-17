@@ -4,15 +4,26 @@ import SpriteFighter from "../entities/SpriteFighter.js";
 import BotAI from "../entities/BotAI.js";
 import { CHARACTERS, PARRY_TOOLS, WEAPONS, WEAPON_PHYSICS } from "../data/catalog.js";
 import { ABILITIES } from "../data/abilities.js";
+import {
+  DEFAULT_BOT_DIFFICULTY,
+  isBotDifficulty
+} from "../data/botDifficulty.mjs";
 import { loadPlayerProfile, savePlayerProfile } from "../data/playerProfile.js";
 import diwaliArena from "../maps/diwaliArena.js";
-import SpitAbility from "../systems/abilities/SpitAbility.js";
 import RocketAimAbility from "../systems/abilities/RocketAimAbility.js";
+import AttackCooldown from "../systems/AttackCooldown.mjs";
 import idleSpriteSheetUrl from "../assets/sprites/IDLE.png";
 import walkingSpriteSheetUrl from "../assets/sprites/Walking.png";
 import spittingSpriteSheetUrl from "../assets/sprites/Spitting.png";
 import rocketBigSpriteUrl from "../assets/sprites/firework-rocket-big.png";
 import explosionSpriteSheetUrl from "../assets/sprites/explosion.png";
+import khukuriUrl from "../assets/sprites/khukuri.svg";
+import shovelUrl from "../assets/sprites/shovel.svg";
+import dirtCloudUrl from "../assets/sprites/dirt-cloud.svg";
+import laureSpriteSheetUrl from "../assets/characters/laure-fighter.svg";
+import harkeSpriteSheetUrl from "../assets/characters/harke-fighter.svg";
+import ballinSpriteSheetUrl from "../assets/characters/ballin-fighter.svg";
+import burningHerbUrl from "../assets/sprites/burning-herb.svg";
 import { PROJECTILE_STEP_SECONDS, advanceProjectile } from "../../shared/projectilePhysics.mjs";
 
 const MAX_HEALTH = 150;
@@ -32,6 +43,9 @@ export default class MatchScene extends Phaser.Scene {
     this.lanMatch = data?.lanMatch || null;
     this.lanClient = data?.lanClient || null;
     this.mode = this.lanMatch ? "lan" : data?.mode || "bot";
+    this.botDifficulty = isBotDifficulty(data?.difficulty)
+      ? data.difficulty
+      : DEFAULT_BOT_DIFFICULTY;
     this.lanSlot = this.lanMatch?.slot ?? 0;
     this.remotePlayerId = this.lanMatch?.opponentId || null;
     this.nextAttackId = 0;
@@ -49,6 +63,7 @@ export default class MatchScene extends Phaser.Scene {
     this.playerHealth = MAX_HEALTH;
     this.dummyHealth = MAX_HEALTH;
     this.matchRewardGranted = false;
+    this.matchEnded = false;
     this.knockoutText = null;
     this.actionMessage = null;
 
@@ -75,6 +90,8 @@ export default class MatchScene extends Phaser.Scene {
 
     this.specialCooldown = ABILITIES.special.cooldownMs;
     this.specialReadyAt = 0;
+    this.playerJabCooldown = new AttackCooldown();
+    this.playerStunnedUntil = 0;
     this.parryCooldown = ABILITIES.parry.cooldownMs;
 
     // Parry timing
@@ -139,6 +156,16 @@ export default class MatchScene extends Phaser.Scene {
         frameHeight: 32
       });
     }
+    for (const [characterId, url] of [
+      ["laure", laureSpriteSheetUrl],
+      ["harke", harkeSpriteSheetUrl],
+      ["ballin", ballinSpriteSheetUrl]
+    ]) {
+      const key = `fighter_${characterId}`;
+      if (!this.textures.exists(key)) {
+        this.load.spritesheet(key, url, { frameWidth: 16, frameHeight: 32 });
+      }
+    }
     if (!this.textures.exists("rocket_explosion")) {
       this.load.spritesheet("rocket_explosion", explosionSpriteSheetUrl, {
         frameWidth: 100,
@@ -148,7 +175,18 @@ export default class MatchScene extends Phaser.Scene {
     if (!this.textures.exists("diwali_rocket_big")) {
       this.load.image("diwali_rocket_big", rocketBigSpriteUrl);
     }
-
+    if (!this.textures.exists("special_khukuri")) {
+      this.load.image("special_khukuri", khukuriUrl);
+    }
+    if (!this.textures.exists("special_shovel")) {
+      this.load.image("special_shovel", shovelUrl);
+    }
+    if (!this.textures.exists("special_dirt")) {
+      this.load.image("special_dirt", dirtCloudUrl);
+    }
+    if (!this.textures.exists("special_burning_herb")) {
+      this.load.image("special_burning_herb", burningHerbUrl);
+    }
   }
 
   createAnimations() {
@@ -168,12 +206,108 @@ export default class MatchScene extends Phaser.Scene {
       });
     });
 
+    for (const characterId of ["laure", "harke", "ballin"]) {
+      const texture = `fighter_${characterId}`;
+      const animations = [
+        [`fighter_${characterId}_idle_animation`, 0, 5, 8],
+        [`fighter_${characterId}_walking_animation`, 6, 11, 10],
+        [`fighter_${characterId}_attack_animation`, 12, 17, 10]
+      ];
+      animations.forEach(([key, start, end, frameRate]) => {
+        if (this.anims.exists(key)) return;
+        this.anims.create({
+          key,
+          frames: this.anims.generateFrameNumbers(texture, { start, end }),
+          frameRate,
+          repeat: -1
+        });
+      });
+    }
+
     if (!this.anims.exists("rocket_explosion_animation")) {
       this.anims.create({
         key: "rocket_explosion_animation",
         frames: this.anims.generateFrameNumbers("rocket_explosion", { start: 0, end: 69 }),
         frameRate: 24,
         repeat: 0
+      });
+    }
+  }
+
+  showSpecialMoveEffect(fighter, move) {
+    const direction = fighter.facing;
+    const scale = this.fighterScale;
+    const x = fighter.x + direction * 38 * scale;
+    const y = fighter.y - 92 * scale;
+
+    if (move.specialEffect === "khukuri") {
+      const blade = this.add.image(x, y, "special_khukuri")
+        .setDisplaySize(58, 30)
+        .setFlipX(direction < 0)
+        .setRotation(direction * -0.45)
+        .setDepth(15);
+      const slash = this.add.arc(x, y, 25, 200, 340, false, 0xffffff, 0)
+        .setStrokeStyle(3, 0x7bd8c2, 0.95)
+        .setRotation(direction < 0 ? Math.PI : 0)
+        .setDepth(16);
+      this.tweens.add({
+        targets: [blade, slash],
+        x: x + direction * 12,
+        angle: direction * 38,
+        alpha: 0,
+        duration: move.active,
+        onComplete: () => {
+          blade.destroy();
+          slash.destroy();
+        }
+      });
+      return;
+    }
+
+    if (move.specialEffect === "burningHerb") {
+      const herb = this.add.image(
+        fighter.x + direction * 13 * scale,
+        fighter.y - 132 * scale,
+        "special_burning_herb"
+      ).setDisplaySize(30, 34)
+        .setFlipX(direction < 0)
+        .setDepth(16);
+      this.tweens.add({
+        targets: herb,
+        x: fighter.x + direction * 5 * scale,
+        y: fighter.y - 150 * scale,
+        angle: direction * 18,
+        scale: 0.7,
+        alpha: 0,
+        duration: move.active,
+        onComplete: () => herb.destroy()
+      });
+      return;
+    }
+
+    if (move.specialEffect === "dirtToss") {
+      const shovel = this.add.image(x, y + 14, "special_shovel")
+        .setDisplaySize(28, 48)
+        .setFlipX(direction < 0)
+        .setDepth(14);
+      const dirt = this.add.image(x + direction * 24, y, "special_dirt")
+        .setDisplaySize(48, 32)
+        .setDepth(15);
+      this.tweens.add({
+        targets: shovel,
+        angle: direction * 35,
+        alpha: 0,
+        duration: move.active,
+        onComplete: () => shovel.destroy()
+      });
+      this.tweens.add({
+        targets: dirt,
+        x: x + direction * 112,
+        y: y - 10,
+        scaleX: 1.5,
+        alpha: 0,
+        duration: move.active,
+        onComplete: () => dirt.destroy()
       });
     }
   }
@@ -235,8 +369,9 @@ export default class MatchScene extends Phaser.Scene {
     this.opponentFighter.setFacing(this.mode === "lan" && this.lanSlot === 1 ? 1 : -1);
     this.opponentFighter.setDepth(10);
     this.botAI = new BotAI(this);
-    this.spitAbility = new SpitAbility(this);
     this.rocketAim = new RocketAimAbility(this);
+    this.specialCooldown = this.playerFighter.getMove("special")?.cooldownMs ||
+      ABILITIES.special.cooldownMs;
 
     this.createHealthUI();
     this.createNavigation();
@@ -262,9 +397,13 @@ export default class MatchScene extends Phaser.Scene {
     this.events.once("shutdown", this.cleanup, this);
     if (this.mode === "lan") {
       this.setupLanMatch();
-      this.showMessage("MOVEMENT SYNC ONLY · COMBAT IS LOCAL");
+      this.showMessage("LAN MATCH · MELEE & WEAPON SYNC");
     } else {
-      this.showMessage(this.mode === "bot" ? "FIGHT!" : "PRACTICE MODE");
+      this.showMessage(
+        this.mode === "bot"
+          ? `FIGHT! · ${this.botDifficulty.toUpperCase()}`
+          : "PRACTICE MODE"
+      );
     }
   }
 
@@ -384,7 +523,9 @@ export default class MatchScene extends Phaser.Scene {
 
     this.opponentNameText = this.add.text(
       926, 28,
-      this.mode === "lan" ? "REMOTE PLAYER" : this.botCharacter.name,
+      this.mode === "lan"
+        ? `REMOTE · ${this.botCharacter.name}`
+        : this.botCharacter.name,
       {
         fontSize: "14px",
         fontStyle: "bold",
@@ -395,7 +536,9 @@ export default class MatchScene extends Phaser.Scene {
     this.opponentLoadoutText = this.add.text(
       926,
       46,
-      this.mode === "lan" ? "MELEE ONLY · PROJECTILES LOCAL" : `${this.botWeapon.name}${this.botParryTool ? " · THALI" : ""}`,
+      this.mode === "lan"
+        ? "MELEE & WEAPONS SYNC"
+        : `${this.botWeapon.name}${this.botParryTool ? " · THALI" : ""}`,
       {
         fontSize: "8px",
         color: "#d8bd91",
@@ -490,6 +633,8 @@ export default class MatchScene extends Phaser.Scene {
         this.showMessage("RIVAL DEFEATED · +50 COINS");
       }
     }
+
+    if (this.dummyHealth === 0) this.finishMatch();
   }
 
   // Ready for future opponent melee attacks.
@@ -532,7 +677,22 @@ export default class MatchScene extends Phaser.Scene {
       ).setOrigin(0.5).setDepth(60);
     }
 
+    if (this.playerHealth === 0) this.finishMatch();
+
     return previousHealth - this.playerHealth;
+  }
+
+  finishMatch() {
+    if (this.matchEnded) return;
+    this.matchEnded = true;
+    this.showMessage("RETURNING TO MENU...");
+    this.time.delayedCall(2500, () => {
+      this.scene.start("MenuScene", {
+        username: this.username,
+        characterId: this.playerData.id,
+        difficulty: this.botDifficulty
+      });
+    });
   }
 
   // ==========================================
@@ -602,21 +762,11 @@ export default class MatchScene extends Phaser.Scene {
     ).setDepth(4);
 
     this.add.text(
-      475,
-      height - 48,
-      "KICK / SWEEP  K",
-      {
-        fontSize: "9px",
-        color: "#e5c99f",
-        fontStyle: "bold"
-      }
-    ).setDepth(4);
-    this.add.text(
       22,
       height - 22,
       WEAPON_PHYSICS[this.weapon.id]?.aimRange
-        ? "SPIT G  ·  SPECIAL E  ·  AIM ROCKET F + MOUSE / RELEASE  ·  PARRY R"
-        : "SPIT G  ·  SPECIAL E  ·  FIREWORK F  ·  PARRY R",
+        ? "JAB J  ·  SPECIAL E  ·  AIM ROCKET F + MOUSE / RELEASE  ·  PARRY R"
+        : "JAB J  ·  SPECIAL E  ·  FIREWORK F  ·  PARRY R",
       {
         fontSize: "9px",
         color: "#e5c99f",
@@ -745,7 +895,7 @@ export default class MatchScene extends Phaser.Scene {
       !available
         ? unavailableText
         : ready
-          ? `${button.title} READY`
+          ? `READY · ${(cooldown / 1000).toFixed(1)}s`
           : `${button.title} ${(remaining / 1000).toFixed(1)}s`
     );
     button.status.setColor(
@@ -846,7 +996,7 @@ export default class MatchScene extends Phaser.Scene {
         : armed
         ? `DETONATE ${fuseRemaining.toFixed(1)}s`
         : ready
-          ? "READY"
+          ? `READY · ${(this.getThrowCooldown() / 1000).toFixed(1)}s`
           : `${(remaining / 1000).toFixed(1)}s`
     );
 
@@ -876,7 +1026,9 @@ export default class MatchScene extends Phaser.Scene {
 
     back.on("pointerdown", () => {
       this.scene.start("MenuScene", {
-        username: this.username
+        username: this.username,
+        characterId: this.playerData.id,
+        difficulty: this.botDifficulty
       });
     });
 
@@ -913,7 +1065,7 @@ export default class MatchScene extends Phaser.Scene {
     this.lanStatusText = this.add.text(
       this.scale.width / 2,
       88,
-      "LAN CONNECTED - MELEE & WEAPON SYNC",
+      "LAN MATCH - MELEE & WEAPON SYNC",
       {
         fontSize: "9px",
         fontStyle: "bold",
@@ -961,7 +1113,6 @@ export default class MatchScene extends Phaser.Scene {
     this.lanConnected = false;
     this.projectiles.filter(p => p.networked).forEach(p => p.object.destroy());
     this.projectiles = this.projectiles.filter(p => !p.networked);
-    this.spitAbility?.clearNetworkShots();
     this.lanStatusText?.setText(`${message} · LOCAL PLAY CONTINUES`)
       .setColor("#ffaaa0");
     this.showMessage(`${message} · LOCAL PLAY CONTINUES`);
@@ -1047,6 +1198,7 @@ export default class MatchScene extends Phaser.Scene {
     const actualDamage = this.damagePlayer(result.damage);
     if (actualDamage <= 0) return;
 
+    this.playerStunnedUntil = this.time.now + result.stunMs;
     this.playerState.vx += result.knockbackX;
     this.playerState.vy += result.knockbackY;
     this.playerState.grounded = false;
@@ -1097,9 +1249,6 @@ export default class MatchScene extends Phaser.Scene {
       crouchAlt: codes.DOWN,
 
       punch: codes.J,
-      kick: codes.K,
-
-      spit: codes.G,
       special: codes.E,
       throw: codes.F,
       parry: codes.R,
@@ -1127,6 +1276,11 @@ export default class MatchScene extends Phaser.Scene {
     const k = this.keys;
     const player = this.playerState;
 
+    if (time < this.playerStunnedUntil) {
+      player.vx = Phaser.Math.Linear(player.vx, 0, Math.min(1, 12 * dt));
+      return;
+    }
+
     const left =
       k.left.isDown || k.leftArrow.isDown || this.touch.left;
 
@@ -1134,8 +1288,6 @@ export default class MatchScene extends Phaser.Scene {
       k.right.isDown || k.rightArrow.isDown || this.touch.right;
 
     const crouching = this.isCrouching();
-    const canChangePose = time >= this.spitAbility.poseUntil;
-
     const jumpPressed =
       Phaser.Input.Keyboard.JustDown(k.jump) ||
       Phaser.Input.Keyboard.JustDown(k.jumpAlt) ||
@@ -1167,7 +1319,7 @@ export default class MatchScene extends Phaser.Scene {
         Math.min(1, 18 * dt)
       );
 
-      if (player.grounded && canChangePose) {
+      if (player.grounded) {
         this.playerFighter.setPose("crouch", 80);
       }
     } else if (!this.playerFighter.isActing) {
@@ -1180,7 +1332,7 @@ export default class MatchScene extends Phaser.Scene {
 
         this.playerFighter.setFacing(direction);
 
-        if (player.grounded && canChangePose) {
+        if (player.grounded) {
           this.playerFighter.setPose("walk", 95);
         }
       } else {
@@ -1190,7 +1342,7 @@ export default class MatchScene extends Phaser.Scene {
           Math.min(1, 14 * dt)
         );
 
-        if (player.grounded && canChangePose) {
+        if (player.grounded) {
           this.playerFighter.setPose("idle", 110);
         }
       }
@@ -1199,17 +1351,6 @@ export default class MatchScene extends Phaser.Scene {
     // Punch
     if (Phaser.Input.Keyboard.JustDown(k.punch)) {
       this.startAttack("jab");
-    }
-
-    // Kick changes to sweep while crouching.
-    if (Phaser.Input.Keyboard.JustDown(k.kick)) {
-      this.startAttack(
-        crouching ? "sweep" : "kick"
-      );
-    }
-
-    if (Phaser.Input.Keyboard.JustDown(k.spit)) {
-      this.fireSpit();
     }
 
     // Signature move
@@ -1264,6 +1405,10 @@ export default class MatchScene extends Phaser.Scene {
   // ==========================================
 
   startAttack(name) {
+    if (name === "jab" && !this.playerJabCooldown.isReady(this.time.now)) {
+      return false;
+    }
+
     if (
       this.playerFighter.isActing ||
       !this.playerState.grounded
@@ -1278,8 +1423,33 @@ export default class MatchScene extends Phaser.Scene {
 
     const attackId = this.mode === "lan" ? ++this.nextAttackId : null;
     const started = this.playerFighter.perform(name, {
-      onImpact: move => this.resolveMelee(move, attackId)
+      onImpact: move => {
+        if (move.meleeBuffMultiplier) {
+          this.activateMeleeBuff(this.playerFighter, move);
+          if (attackId !== null) {
+            this.lanClient?.sendAttackResult({
+              attackId,
+              hit: false,
+              blocked: false,
+              zone: null,
+              damage: 0,
+              knockbackX: 0,
+              knockbackY: 0,
+              stunMs: 0
+            });
+          }
+          return;
+        }
+        this.resolveMelee(move, attackId);
+      }
     });
+
+    if (started && name === "jab") {
+      this.playerJabCooldown.start(
+        this.time.now,
+        move.cooldownMs || 0
+      );
+    }
 
     if (started && attackId !== null) {
       this.lanClient?.sendAttackStart({
@@ -1291,10 +1461,6 @@ export default class MatchScene extends Phaser.Scene {
     return started;
   }
 
-  fireSpit() {
-    return this.spitAbility.fire();
-  }
-
   activateSpecial(time) {
     if (time < this.specialReadyAt) {
       this.showMessage("SPECIAL RECHARGING");
@@ -1303,6 +1469,8 @@ export default class MatchScene extends Phaser.Scene {
 
     if (!this.startAttack("special")) return false;
 
+    this.specialCooldown = this.playerFighter.getMove("special")?.cooldownMs ||
+      ABILITIES.special.cooldownMs;
     this.specialReadyAt = time + this.specialCooldown;
     return true;
   }
@@ -1324,8 +1492,42 @@ export default class MatchScene extends Phaser.Scene {
     }
 
     return this.opponentFighter.perform(name, {
-      onImpact: move => this.resolveBotMelee(move)
+      onImpact: move => {
+        if (move.meleeBuffMultiplier) {
+          this.activateMeleeBuff(this.opponentFighter, move);
+          return;
+        }
+        this.resolveBotMelee(move);
+      }
     });
+  }
+
+  activateMeleeBuff(fighter, move) {
+    fighter.applyMeleeDamageBoost(
+      move.meleeBuffMultiplier,
+      move.meleeBuffDurationMs,
+      this.time.now
+    );
+    const color = move.effectColor || 0x88d979;
+    const aura = this.add.circle(
+      fighter.x,
+      fighter.y - 82 * this.fighterScale,
+      24,
+      color,
+      0.12
+    ).setStrokeStyle(3, color, 0.95).setDepth(16);
+    this.tweens.add({
+      targets: aura,
+      scale: 1.8,
+      alpha: 0,
+      duration: 500,
+      onComplete: () => aura.destroy()
+    });
+    this.showMessage(
+      fighter === this.playerFighter
+        ? `MELEE BOOST · ${Math.ceil(move.meleeBuffDurationMs / 1000)} SECONDS`
+        : "RIVAL MELEE BOOST"
+    );
   }
 
   resolveBotMelee(move) {
@@ -1350,7 +1552,11 @@ export default class MatchScene extends Phaser.Scene {
     );
 
     const hitZone = possibleHits[0].zone;
-    const damage = Math.round(move.damage * multipliers[hitZone]);
+    const damage = Math.round(
+      move.damage *
+      multipliers[hitZone] *
+      this.opponentFighter.getMeleeDamageMultiplier(this.time.now)
+    );
     const blocked = this.isCrouching() && hitZone !== "legs";
     const actualDamage = blocked
       ? this.receivePlayerDamage(damage)
@@ -1358,6 +1564,9 @@ export default class MatchScene extends Phaser.Scene {
 
     if (actualDamage <= 0) return;
 
+    if (!blocked) {
+      this.playerStunnedUntil = this.time.now + (move.stunDurationMs || 380);
+    }
     this.playerState.vx +=
       this.opponentFighter.facing * move.knockback;
     this.playerState.vy -= move.lift;
@@ -1420,7 +1629,8 @@ export default class MatchScene extends Phaser.Scene {
           zone: null,
           damage: 0,
           knockbackX: 0,
-          knockbackY: 0
+          knockbackY: 0,
+          stunMs: 0
         });
       }
       this.showMessage("MISS");
@@ -1442,7 +1652,9 @@ export default class MatchScene extends Phaser.Scene {
     const hitZone = possibleHits[0].zone;
 
     const damage = Math.round(
-      move.damage * multipliers[hitZone]
+      move.damage *
+      multipliers[hitZone] *
+      this.playerFighter.getMeleeDamageMultiplier(this.time.now)
     );
 
     if (this.mode === "lan" && attackId !== null) {
@@ -1454,7 +1666,8 @@ export default class MatchScene extends Phaser.Scene {
         zone: hitZone,
         damage: blocked ? 0 : damage,
         knockbackX: blocked ? 0 : this.playerFighter.facing * move.knockback,
-        knockbackY: blocked ? 0 : -move.lift
+        knockbackY: blocked ? 0 : -move.lift,
+        stunMs: blocked ? 0 : move.stunDurationMs || 380
       });
 
       this.cameras.main.shake(100, damage > 25 ? 0.011 : 0.005);
@@ -1480,7 +1693,7 @@ export default class MatchScene extends Phaser.Scene {
 
     dummy.vy -= move.lift;
     dummy.grounded = false;
-    this.dummyStunnedUntil = this.time.now + 380;
+    this.dummyStunnedUntil = this.time.now + (move.stunDurationMs || 380);
     this.opponentFighter.reactToHit();
 
     this.cameras.main.shake(
@@ -1716,12 +1929,6 @@ export default class MatchScene extends Phaser.Scene {
   receiveLanProjectileLaunch(event) {
     if (!event?.projectileId || this.projectiles.some(p => p.projectileId === event.projectileId)) return;
     const owner = event.ownerId === this.lanMatch?.playerId ? "player" : "opponent";
-    if (event.kind === "spit") {
-      this.spitAbility?.addNetworkShot(event, owner);
-      if (owner === "opponent") this.opponentFighter.setPose("spit", event.poseDurationMs || 320);
-      else this.playerFighter.setPose("spit", event.poseDurationMs || 320);
-      return;
-    }
     const data = WEAPON_PHYSICS[event.weaponId];
     if (!data) return;
     const state = this.spawnProjectile(event.x, event.y, Math.sign(event.vx) || 1, data,
@@ -1780,7 +1987,6 @@ export default class MatchScene extends Phaser.Scene {
     if (!projectile) return;
     projectile.object.destroy();
     this.projectiles = this.projectiles.filter(p => p !== projectile);
-    this.spitAbility?.removeNetworkShot(projectileId);
   }
 
   receiveLanProjectileImpact(event) {
@@ -1793,7 +1999,6 @@ export default class MatchScene extends Phaser.Scene {
     const color = event.color ?? projectile?.color ?? 0xc3ee7a;
     const radius = event.radius || projectile?.radius || 55;
     if (projectile) this.removeLanProjectile(event.projectileId);
-    else this.spitAbility?.removeNetworkShot(event.projectileId);
     for (const outcome of event.outcomes || []) {
       if (outcome.playerId === this.lanMatch?.playerId) {
         this.damagePlayer(Math.max(0, this.playerHealth - outcome.health));
@@ -2253,9 +2458,9 @@ export default class MatchScene extends Phaser.Scene {
     this.parryUntil = time + ABILITIES.parry.windowMs;
     this.parryCooldownUntil = time + this.parryCooldown;
 
-    this.playerFighter.setPose("parry", 60);
+    this.playerFighter.setPose("parry", ABILITIES.parry.windowMs);
 
-    this.showMessage("PARRY! · PERFECT TIMING");
+    this.showMessage("PARRY WINDOW");
   }
 
   tryReflectProjectiles(time) {
@@ -2309,10 +2514,10 @@ export default class MatchScene extends Phaser.Scene {
     if (event?.playerId === this.lanMatch?.playerId) {
       this.parryUntil = this.time.now + event.windowMs;
       this.parryCooldownUntil = this.time.now + event.cooldownMs;
-      this.playerFighter.setPose("parry", 60);
-      this.showMessage("PARRY! · PERFECT TIMING");
+      this.playerFighter.setPose("parry", ABILITIES.parry.windowMs);
+      this.showMessage("PARRY WINDOW");
     } else if (event?.playerId === this.remotePlayerId) {
-      this.opponentFighter.setPose("parry", 60);
+      this.opponentFighter.setPose("parry", ABILITIES.parry.windowMs);
     }
   }
 
@@ -2481,12 +2686,6 @@ export default class MatchScene extends Phaser.Scene {
           if (action === "jump") this.mobileJump();
           if (action === "punch") this.startAttack("jab");
 
-          if (action === "kick") {
-            this.startAttack(
-              this.isCrouching() ? "sweep" : "kick"
-            );
-          }
-
           if (action === "special") this.mobileSpecial();
           if (action === "parry") this.beginParry(this.time.now);
         });
@@ -2498,7 +2697,6 @@ export default class MatchScene extends Phaser.Scene {
     makeButton(141, "S", "crouch", true);
 
     makeButton(682, "J", "punch");
-    makeButton(730, "K", "kick");
     makeButton(826, "W", "jump");
 
     // Cooldown abilities use their interactive HUD rings.
@@ -2525,7 +2723,7 @@ export default class MatchScene extends Phaser.Scene {
 
   // ==========================================
   // DEBUG HITBOXES
-  // Press F1 to display body and attack boxes.
+  // Press F1 to display body, attack, and platform collision bounds.
   // ==========================================
 
   drawDebugHitboxes(time) {
@@ -2533,6 +2731,17 @@ export default class MatchScene extends Phaser.Scene {
     g.clear();
 
     if (!this.debugHitboxes) return;
+
+    const platformColors = [0x64ff9c, 0x69caff, 0xffc36a];
+    this.platforms.forEach((platform, index) => {
+      g.lineStyle(3, platformColors[index % platformColors.length], 0.95);
+      g.lineBetween(
+        platform.x,
+        platform.y,
+        platform.x + platform.width,
+        platform.y
+      );
+    });
 
     const drawBoxes = (fighter, color) => {
       fighter.getHurtboxes().forEach(box => {
@@ -2698,15 +2907,15 @@ export default class MatchScene extends Phaser.Scene {
   update(time, delta) {
     const dt = Math.min(delta, 40) / 1000;
 
-    if (!this.playerFighter || !this.opponentFighter) return;
+    if (!this.playerFighter || !this.opponentFighter || this.matchEnded) return;
 
     if (Phaser.Input.Keyboard.JustDown(this.debugKey)) {
       this.debugHitboxes = !this.debugHitboxes;
 
       this.showMessage(
         this.debugHitboxes
-          ? "HITBOX DEBUG ON"
-          : "HITBOX DEBUG OFF"
+          ? "COLLISION DEBUG ON"
+          : "COLLISION DEBUG OFF"
       );
     }
 
@@ -2749,7 +2958,6 @@ export default class MatchScene extends Phaser.Scene {
     }
 
     this.rocketAim.update(this.input.activePointer);
-    this.spitAbility.update(dt);
     this.updateProjectiles(dt);
 
     this.drawThrowCooldown();
@@ -2781,7 +2989,6 @@ export default class MatchScene extends Phaser.Scene {
     this.projectiles.forEach(p => {
       p.object.destroy();
     });
-    this.spitAbility?.destroy();
     this.rocketAim?.destroy();
     this.projectiles = [];
   }

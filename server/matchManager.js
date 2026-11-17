@@ -3,12 +3,12 @@ const MAX_MOVEMENT_RATE = 60;
 const MAX_COMBAT_EVENT_RATE = 20;
 const MAX_PENDING_ATTACKS = 32;
 const MAX_HEALTH = 150;
-const VALID_MOVES = new Set(["jab", "kick", "sweep", "special"]);
+const VALID_MOVES = new Set(["jab", "special"]);
 const VALID_HIT_ZONES = new Set(["head", "torso", "legs"]);
 const BLOCKABLE_HIT_ZONES = new Set(["head", "torso"]);
 const VALID_POSES = new Set([
-  "idle", "walk", "jump", "crouch", "guard", "jab", "kick", "sweep",
-  "uppercut", "shadowSweep", "spit", "throw", "hit", "parry"
+  "idle", "walk", "jump", "crouch", "guard", "jab",
+  "uppercut", "throw", "hit", "parry"
 ]);
 
 function clamp(value, min, max) {
@@ -48,22 +48,32 @@ function normalizeAttackStart(attack) {
 
 function normalizeAttackResult(result) {
   if (!result || typeof result !== "object") return null;
-  const { attackId, hit, blocked, zone, damage, knockbackX, knockbackY } = result;
+  const {
+    attackId,
+    hit,
+    blocked,
+    zone,
+    damage,
+    knockbackX,
+    knockbackY,
+    stunMs
+  } = result;
   if (!Number.isSafeInteger(attackId) || attackId < 1) return null;
   if (typeof hit !== "boolean" || typeof blocked !== "boolean") return null;
   if (!Number.isInteger(damage) || damage < 0 || damage > MAX_HEALTH) return null;
   if (!Number.isFinite(knockbackX) || Math.abs(knockbackX) > 1000) return null;
   if (!Number.isFinite(knockbackY) || knockbackY < -1000 || knockbackY > 0) return null;
+  if (!Number.isInteger(stunMs) || stunMs < 0 || stunMs > 2000) return null;
 
   if (!hit) {
-    if (blocked || zone !== null || damage !== 0 || knockbackX !== 0 || knockbackY !== 0) return null;
+    if (blocked || zone !== null || damage !== 0 || knockbackX !== 0 || knockbackY !== 0 || stunMs !== 0) return null;
   } else if (blocked) {
-    if (!BLOCKABLE_HIT_ZONES.has(zone) || damage !== 0 || knockbackX !== 0 || knockbackY !== 0) return null;
+    if (!BLOCKABLE_HIT_ZONES.has(zone) || damage !== 0 || knockbackX !== 0 || knockbackY !== 0 || stunMs !== 0) return null;
   } else if (!VALID_HIT_ZONES.has(zone) || damage < 1) {
     return null;
   }
 
-  return { attackId, hit, blocked, zone, damage, knockbackX, knockbackY };
+  return { attackId, hit, blocked, zone, damage, knockbackX, knockbackY, stunMs };
 }
 
 class MatchManager {
@@ -84,6 +94,8 @@ class MatchManager {
   normalizeLoadout(rawLoadout) {
     if (!rawLoadout || typeof rawLoadout !== "object") return null;
     const knownWeapons = new Set(Object.keys(this.rules.weapons));
+    const characterId = rawLoadout.characterId;
+    if (!this.rules.characters?.includes(characterId)) return null;
     const weapons = Array.isArray(rawLoadout.weapons)
       ? [...new Set(rawLoadout.weapons.filter(id => knownWeapons.has(id)))]
       : [];
@@ -94,6 +106,7 @@ class MatchManager {
       ? rawLoadout.parryTools.filter(id => id === "puja-thali")
       : [];
     return {
+      characterId,
       weaponId,
       weapons,
       parryToolId: rawLoadout.parryToolId === "puja-thali" && parryTools.includes("puja-thali")
@@ -145,6 +158,9 @@ class MatchManager {
         opponentId: playerId === waitingSocket.id ? socket.id : waitingSocket.id,
         slot: player.slot,
         playerCount: MAX_PLAYERS_PER_MATCH,
+        opponentCharacterId: playerId === waitingSocket.id
+          ? loadout.characterId
+          : waitingLoadout.characterId,
         weaponId: player.loadout.weaponId,
         parryToolId: player.loadout.parryToolId
       });

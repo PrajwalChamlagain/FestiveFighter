@@ -1,7 +1,8 @@
 import Phaser from "phaser";
 import { ABILITIES } from "../data/abilities.js";
+import AttackCooldown from "../systems/AttackCooldown.mjs";
+import { getBotDifficultySettings } from "../data/botDifficulty.mjs";
 
-const THINK_INTERVAL = 110;
 const ATTACK_DISTANCE = 108;
 const KEEP_DISTANCE = 82;
 const THROW_DISTANCE = 190;
@@ -10,8 +11,10 @@ const JUMP_COOLDOWN = 1150;
 export default class BotAI {
   constructor(scene) {
     this.scene = scene;
+    this.difficulty = getBotDifficultySettings(scene.botDifficulty);
     this.nextThinkAt = 0;
     this.specialReadyAt = 0;
+    this.jabCooldown = new AttackCooldown();
     this.jumpReadyAt = 0;
     this.nextPaceAt = 0;
     this.paceDirection = 1;
@@ -45,8 +48,10 @@ export default class BotAI {
     }
 
     if (time >= this.nextThinkAt) {
-      this.nextThinkAt = time + THINK_INTERVAL;
-      this.decide(time, distance, towardPlayer);
+      this.nextThinkAt = time + this.difficulty.thinkIntervalMs;
+      if (Math.random() < this.difficulty.decisionChance) {
+        this.decide(time, distance, towardPlayer);
+      }
     }
 
     this.move(time, dt, distance, towardPlayer);
@@ -59,7 +64,10 @@ export default class BotAI {
     const target = scene.playerFighter;
     const player = scene.playerState;
 
-    if (this.evadeProjectile(time)) return;
+    if (
+      Math.random() < this.difficulty.evadeChance &&
+      this.evadeProjectile(time)
+    ) return;
 
     const incomingMove = target.currentMove;
     const incomingActive = target.isActing &&
@@ -74,13 +82,14 @@ export default class BotAI {
     ) {
       bot.vy = scene.jumpVelocity * 0.74;
       bot.grounded = false;
-      this.jumpReadyAt = time + JUMP_COOLDOWN;
+      this.jumpReadyAt = time +
+        JUMP_COOLDOWN * this.difficulty.jumpCooldownMultiplier;
       fighter.setPose("jump", 65);
       return;
     }
 
     if (incomingActive && distance < 105) {
-      bot.vx -= towardPlayer * 185;
+      bot.vx -= towardPlayer * 185 * this.difficulty.movementSpeedMultiplier;
       return;
     }
 
@@ -89,17 +98,6 @@ export default class BotAI {
     const playerRecovering = target.isActing &&
       target.actionPhase === "recovery";
     const playerAirborne = !player.grounded;
-    const playerCrouching = scene.isPlayerCrouching();
-
-    if (
-      playerCrouching &&
-      player.grounded &&
-      distance <= 114 &&
-      distance > 45
-    ) {
-      scene.startBotAttack("sweep");
-      return;
-    }
 
     if (
       playerRecovering &&
@@ -110,9 +108,10 @@ export default class BotAI {
       Math.random() < 0.45
     ) {
       bot.vy = scene.jumpVelocity * 0.82;
-      bot.vx += towardPlayer * 170;
+      bot.vx += towardPlayer * 170 * this.difficulty.movementSpeedMultiplier;
       bot.grounded = false;
-      this.jumpReadyAt = time + JUMP_COOLDOWN;
+      this.jumpReadyAt = time +
+        JUMP_COOLDOWN * this.difficulty.jumpCooldownMultiplier;
       fighter.setPose("jump", 65);
       return;
     }
@@ -126,20 +125,30 @@ export default class BotAI {
       return;
     }
 
+    const specialRange = fighter.character.id === "harke" ? 135 : 103;
     if (
       time >= this.specialReadyAt &&
-      distance <= 103 &&
+      distance <= specialRange &&
       distance >= 58 &&
       (playerRecovering || playerAirborne || distance > 98)
     ) {
       if (scene.startBotAttack("special")) {
-        this.specialReadyAt = time + ABILITIES.special.botCooldownMs;
+        this.specialReadyAt = time +
+          (fighter.getMove("special")?.cooldownMs || ABILITIES.special.botCooldownMs) *
+            this.difficulty.specialCooldownMultiplier;
         return;
       }
     }
 
     if (distance <= ATTACK_DISTANCE && distance > 42) {
-      scene.startBotAttack(distance > 88 ? "kick" : "jab");
+      if (this.jabCooldown.isReady(time) && scene.startBotAttack("jab")) {
+        const jab = fighter.getMove("jab");
+        this.jabCooldown.start(
+          time,
+          (jab?.botCooldownMs || jab?.cooldownMs || 0) *
+            this.difficulty.jabCooldownMultiplier
+        );
+      }
       return;
     }
 
@@ -194,10 +203,10 @@ export default class BotAI {
     ) {
       threat.projectile.botParryAttempted = true;
 
-      if (Math.random() < 0.5) {
+      if (Math.random() < this.difficulty.parryChance) {
         scene.botParryUntil = time + ABILITIES.parry.windowMs;
         scene.botParryCooldownUntil = time + ABILITIES.parry.botCooldownMs;
-        fighter.setPose("parry", 60);
+        fighter.setPose("parry", ABILITIES.parry.windowMs);
         scene.tryReflectProjectiles(time);
 
         if (scene.botParryUntil === 0) {
@@ -221,7 +230,7 @@ export default class BotAI {
 
     this.evadeDirection = away;
     this.evadingUntil = time + 380;
-    bot.vx += away * 210;
+    bot.vx += away * 210 * this.difficulty.movementSpeedMultiplier;
 
     if (
       bot.grounded &&
@@ -230,7 +239,8 @@ export default class BotAI {
     ) {
       bot.vy = scene.jumpVelocity * 0.65;
       bot.grounded = false;
-      this.jumpReadyAt = time + JUMP_COOLDOWN;
+      this.jumpReadyAt = time +
+        JUMP_COOLDOWN * this.difficulty.jumpCooldownMultiplier;
       fighter.setPose("jump", 70);
     }
 
@@ -245,7 +255,7 @@ export default class BotAI {
     if (fighter.isActing) {
       bot.vx = Phaser.Math.Linear(
         bot.vx,
-        towardPlayer * 55,
+        towardPlayer * 55 * this.difficulty.movementSpeedMultiplier,
         Math.min(1, 4 * dt)
       );
       return;
@@ -259,7 +269,7 @@ export default class BotAI {
     if (time < this.evadingUntil) {
       bot.vx = Phaser.Math.Linear(
         bot.vx,
-        this.evadeDirection * 190,
+        this.evadeDirection * 190 * this.difficulty.movementSpeedMultiplier,
         Math.min(1, 8 * dt)
       );
 
@@ -302,7 +312,9 @@ export default class BotAI {
       direction = this.paceDirection;
     }
 
-    const targetSpeed = direction * (incomingActive ? 260 : 240);
+    const targetSpeed = direction *
+      (incomingActive ? 260 : 240) *
+      this.difficulty.movementSpeedMultiplier;
     bot.vx = Phaser.Math.Linear(
       bot.vx,
       targetSpeed,

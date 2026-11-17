@@ -14,11 +14,6 @@
       "type": "image",
       "key": "login_arena",
       "url": "../login-arena/login-arena.jpg"
-    },
-    {
-      "type": "image",
-      "key": "weapon",
-      "url": "../wepo/wepe.png"
     }
   ]
 }

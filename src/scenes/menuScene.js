@@ -1,10 +1,42 @@
 import Phaser from "phaser";
 import idleSpriteSheetUrl from "../assets/sprites/IDLE.png";
-import { CHARACTERS, PARRY_TOOLS, WEAPONS } from "../data/catalog.js";
+import {
+  CHARACTERS,
+  PARRY_TOOLS,
+  WEAPONS,
+  WEAPON_PHYSICS
+} from "../data/catalog.js";
+import { ABILITIES } from "../data/abilities.js";
+import { SPECIAL_MOVES } from "../data/combatMoves.js";
+import {
+  BOT_DIFFICULTIES,
+  DEFAULT_BOT_DIFFICULTY,
+  isBotDifficulty
+} from "../data/botDifficulty.mjs";
 import { loadPlayerProfile, savePlayerProfile } from "../data/playerProfile.js";
 import LanClient from "../network/LanClient.js";
+import laurePortraitUrl from "../assets/characters/laure.svg";
+import harkePortraitUrl from "../assets/characters/harke.svg";
+import ballinPortraitUrl from "../assets/characters/ballin.svg";
+import sutliShopUrl from "../assets/shop/sutli.svg";
+import firecrackerShopUrl from "../assets/shop/firecracker.svg";
+import anarShopUrl from "../assets/shop/anar.svg";
+import chakriShopUrl from "../assets/shop/chakri.svg";
+import thaliShopUrl from "../assets/shop/puja-thali.svg";
 
 const SHOP_CATEGORIES = ["characters", "weapons", "parryTools"];
+const CHARACTER_PORTRAITS = {
+  laure: laurePortraitUrl,
+  harke: harkePortraitUrl,
+  ballin: ballinPortraitUrl
+};
+const SHOP_ITEM_ART = {
+  sutli: sutliShopUrl,
+  firecracker: firecrackerShopUrl,
+  anar: anarShopUrl,
+  chakri: chakriShopUrl,
+  "puja-thali": thaliShopUrl
+};
 
 export default class MenuScene extends Phaser.Scene {
   constructor() {
@@ -13,6 +45,10 @@ export default class MenuScene extends Phaser.Scene {
 
   init(data) {
     this.username = data?.username?.trim() || "";
+    this.difficulty = isBotDifficulty(data?.difficulty)
+      ? data.difficulty
+      : DEFAULT_BOT_DIFFICULTY;
+    this.playerCharacterId = data?.characterId || this.playerCharacterId;
   }
 
   preload() {
@@ -21,6 +57,14 @@ export default class MenuScene extends Phaser.Scene {
         frameWidth: 16,
         frameHeight: 32
       });
+    }
+    for (const [characterId, url] of Object.entries(CHARACTER_PORTRAITS)) {
+      const key = `character_${characterId}_portrait`;
+      if (!this.textures.exists(key)) this.load.image(key, url);
+    }
+    for (const [itemId, url] of Object.entries(SHOP_ITEM_ART)) {
+      const key = `shop_${itemId}`;
+      if (!this.textures.exists(key)) this.load.image(key, url);
     }
   }
 
@@ -154,7 +198,7 @@ export default class MenuScene extends Phaser.Scene {
     } else {
       this.drawPlayMenu();
       if (this.lanError) {
-        this.add.text(width / 2, 484, this.lanError, {
+        this.add.text(width / 2, 515, this.lanError, {
           fontSize: "11px",
           color: "#ffaaa0"
         }).setOrigin(0.5);
@@ -172,23 +216,74 @@ export default class MenuScene extends Phaser.Scene {
       color: "#fff1d4"
     }).setOrigin(0.5);
 
-    this.drawCharacterPicker(
-      "",
-      this.playerCharacterId,
-      width / 2,
-      247,
-      CHARACTERS.filter(character => this.profile.characters.includes(character.id)),
-      id => { this.playerCharacterId = id; }
+    const ownedCharacters = CHARACTERS.filter(character =>
+      this.profile.characters.includes(character.id)
     );
-    this.addButton(width / 2, 365, "START BOT MATCH", () => this.startMatch(), {
+    const selected = ownedCharacters.find(character =>
+      character.id === this.playerCharacterId
+    ) || ownedCharacters[0];
+    this.playerCharacterId = selected.id;
+
+    this.add.text(160, 151, "YOUR FIGHTERS", {
+      fontSize: "12px",
+      fontStyle: "bold",
+      color: "#fbbf24"
+    }).setOrigin(0.5);
+    ownedCharacters.forEach((character, index) => {
+      this.addButton(160, 190 + index * 48, character.name, () => {
+        this.playerCharacterId = character.id;
+        this.showLobby("play");
+      }, {
+        width: 190,
+        fontSize: "12px",
+        selected: character.id === selected.id
+      });
+    });
+
+    const previewX = 570;
+    this.drawCharacterArt(selected, previewX, 211, 106);
+    this.add.text(previewX, 279, selected.name, {
+      fontSize: "15px",
+      fontStyle: "bold",
+      color: "#ffffff"
+    }).setOrigin(0.5);
+    this.add.text(previewX, 306, "E SPECIAL", {
+      fontSize: "10px",
+      fontStyle: "bold",
+      color: "#fbbf24"
+    }).setOrigin(0.5);
+    this.add.text(previewX, 327, this.shopDescription(selected), {
+      fontSize: "11px",
+      color: "#e5c99f",
+      align: "center",
+      wordWrap: { width: 400 }
+    }).setOrigin(0.5);
+
+    this.add.text(previewX, 345, "BOT DIFFICULTY", {
+      fontSize: "10px",
+      fontStyle: "bold",
+      color: "#fbbf24"
+    }).setOrigin(0.5);
+    BOT_DIFFICULTIES.forEach((difficulty, index) => {
+      this.addButton(previewX + (index - 1.5) * 94, 366, difficulty.label, () => {
+        this.difficulty = difficulty.id;
+        this.showLobby("play");
+      }, {
+        width: 88,
+        fontSize: "9px",
+        selected: this.difficulty === difficulty.id
+      });
+    });
+
+    this.addButton(previewX, 405, "START BOT MATCH", () => this.startMatch(), {
       width: 230,
       fontSize: "15px"
     });
-    this.addButton(width / 2, 414, "LAN MATCH", () => this.startLanMatch(), {
+    this.addButton(previewX, 444, "LAN MATCH", () => this.startLanMatch(), {
       width: 230,
       fontSize: "15px"
     });
-    this.addButton(width / 2, 462, "SHOP", () => this.showLobby("shop"), {
+    this.addButton(previewX, 483, "SHOP", () => this.showLobby("shop"), {
       width: 190,
       fontSize: "14px"
     });
@@ -229,6 +324,7 @@ export default class MenuScene extends Phaser.Scene {
 
     this.lanClient.connectAndJoin({
       weaponId: this.profile.equippedWeaponId,
+      characterId: this.playerCharacterId,
       weapons: this.profile.weapons,
       parryToolId: this.profile.parryTools.includes(PARRY_TOOLS[0].id)
         ? PARRY_TOOLS[0].id
@@ -272,13 +368,11 @@ export default class MenuScene extends Phaser.Scene {
     this.lanTransferred = true;
     this.clearLanSubscriptions();
     this.lanClient = null;
-    const randomOpponent = CHARACTERS.find(character => character.id !== this.playerCharacterId) || CHARACTERS[0];
-
     this.scene.start("MatchScene", {
       username: this.username,
       mode: "lan",
       characterId: this.playerCharacterId,
-      opponentCharacterId: randomOpponent.id,
+      opponentCharacterId: match.opponentCharacterId || CHARACTERS[0].id,
       weaponId: this.profile.equippedWeaponId,
       parryToolId: this.profile.parryTools.includes(PARRY_TOOLS[0].id)
         ? PARRY_TOOLS[0].id
@@ -304,36 +398,6 @@ export default class MenuScene extends Phaser.Scene {
     this.clearLanSubscriptions();
     this.lanClient?.destroy();
     this.lanClient = null;
-  }
-
-  drawCharacterPicker(title, selectedId, x, y, options, onChange) {
-    const selected = options.find(character => character.id === selectedId) || options[0];
-    const selectedIndex = options.findIndex(character => character.id === selected.id);
-    if (title) {
-      this.add.text(x, y - 70, title, {
-        fontSize: "12px",
-        fontStyle: "bold",
-        color: "#fbbf24"
-      }).setOrigin(0.5);
-    }
-
-    const preview = this.add.sprite(x, y - 3, "menu_fighter_preview", 0)
-      .setScale(2.8)
-      .setTint(selected.tint);
-    preview.setDepth(2);
-    this.add.text(x, y + 62, selected.name, {
-      fontSize: "14px",
-      fontStyle: "bold",
-      color: "#ffffff"
-    }).setOrigin(0.5);
-    this.addButton(x - 100, y + 2, "‹", () => {
-      onChange(options[(selectedIndex - 1 + options.length) % options.length].id);
-      this.showLobby("play");
-    }, { width: 40, fontSize: "25px" });
-    this.addButton(x + 100, y + 2, "›", () => {
-      onChange(options[(selectedIndex + 1) % options.length].id);
-      this.showLobby("play");
-    }, { width: 40, fontSize: "25px" });
   }
 
   drawShop() {
@@ -371,12 +435,10 @@ export default class MenuScene extends Phaser.Scene {
       this.profile.equippedWeaponId === item.id;
 
     if (this.shopCategory === "characters") {
-      this.add.sprite(width / 2, 253, "menu_fighter_preview", 0)
-        .setScale(3)
-        .setTint(item.tint);
+      this.drawCharacterArt(item, width / 2, 253, 84);
     } else {
-      this.add.image(width / 2, 253, "weapon")
-        .setDisplaySize(72, 72);
+      this.add.image(width / 2, 253, `shop_${item.id}`)
+        .setDisplaySize(112, 112);
     }
 
     this.add.text(width / 2, 315, item.name, {
@@ -388,9 +450,17 @@ export default class MenuScene extends Phaser.Scene {
       fontSize: "12px",
       color: "#e5c99f"
     }).setOrigin(0.5);
+    const cooldownMs = this.getShopCooldown(item);
+    if (cooldownMs !== null) {
+      this.add.text(width / 2, 367, `COOLDOWN · ${(cooldownMs / 1000).toFixed(1)}s`, {
+        fontSize: "10px",
+        fontStyle: "bold",
+        color: "#8fcfff"
+      }).setOrigin(0.5);
+    }
     this.add.text(
       width / 2,
-      379,
+      392,
       equipped ? "EQUIPPED" : owned ? "OWNED" : `${item.price} COINS`,
       {
         fontSize: "14px",
@@ -416,7 +486,7 @@ export default class MenuScene extends Phaser.Scene {
       this.buyShopItem(item);
     }, { width: 230, fontSize: "13px" });
     if (this.shopMessage) {
-      this.add.text(width / 2, 466, this.shopMessage, {
+      this.add.text(width / 2, 475, this.shopMessage, {
         fontSize: "12px",
         color: "#fff1d4"
       }).setOrigin(0.5);
@@ -434,13 +504,45 @@ export default class MenuScene extends Phaser.Scene {
     return this.profile[ownershipKey].includes(id);
   }
 
+  getShopCooldown(item) {
+    if (this.shopCategory === "characters") {
+      return SPECIAL_MOVES[item.id]?.cooldownMs ?? null;
+    }
+    if (this.shopCategory === "weapons") {
+      return WEAPON_PHYSICS[item.id]?.cooldown ?? null;
+    }
+    if (this.shopCategory === "parryTools") {
+      return ABILITIES.parry.cooldownMs;
+    }
+    return null;
+  }
+
   shopDescription(item) {
+    const specialDescriptions = {
+      "olaal-babu": "E: a high-damage spit strike at point-blank range.",
+      royal: "E: a rising palm strike with a powerful launch.",
+      laure: "E: a very short-range khukuri slash for heavy damage.",
+      harke: "E: toss dirt to hit and briefly stun a rival.",
+      ballin: "E: use a burning herb to boost melee damage."
+    };
+    if (specialDescriptions[item.id]) return specialDescriptions[item.id];
     if (item.id === "firecracker") return "A fast, accelerating blast with a strong self-boost.";
     if (item.id === "sutli") return "A heavy bomb with a powerful blast hop.";
     if (item.id === "anar") return "A high-damage rocket aimed with the mouse; hold F and release to launch.";
     if (item.id === "chakri") return "A quick, light firework with a small blast.";
     if (item.id === "puja-thali") return "Unlock the short-window projectile parry.";
     return "A new color for your sprite fighter.";
+  }
+
+  drawCharacterArt(character, x, y, size) {
+    const portraitKey = `character_${character.id}_portrait`;
+    if (this.textures.exists(portraitKey)) {
+      return this.add.image(x, y, portraitKey).setDisplaySize(size, size).setDepth(2);
+    }
+    return this.add.sprite(x, y, "menu_fighter_preview", 0)
+      .setScale(size / 32)
+      .setTint(character.tint)
+      .setDepth(2);
   }
 
   buyShopItem(item) {
@@ -484,6 +586,7 @@ export default class MenuScene extends Phaser.Scene {
     this.scene.start("MatchScene", {
       username: this.username,
       mode: "bot",
+      difficulty: this.difficulty,
       characterId: this.playerCharacterId,
       opponentCharacterId: randomFrom(CHARACTERS).id,
       weaponId: this.profile.equippedWeaponId,

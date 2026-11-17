@@ -1,9 +1,11 @@
 import combatRules from "../../shared/combatRules.json";
 
 export const CHARACTERS = [
-    { id: "sunfire", name: "SUNFIRE", tint: 0xffc28c, price: 0 },
-    { id: "shadow", name: "SHADOW", tint: 0xb9a1f2, price: 150 },
-    { id: "royal", name: "ROYAL", tint: 0xffd166, price: 225 }
+    { id: "olaal-babu", name: "OLAAL BABU", tint: 0xffc28c, price: 0 },
+    { id: "laure", name: "LAURE", tint: 0x7bd8c2, price: 150, customSprite: true },
+    { id: "royal", name: "ROYAL", tint: 0xffd166, price: 225 },
+    { id: "harke", name: "HARKE", tint: 0xd8a36a, price: 350, customSprite: true },
+    { id: "ballin", name: "BALLIN", tint: 0x86d991, price: 0, customSprite: true }
 ];
 
 export const WEAPONS = [
@@ -21,7 +23,7 @@ export const WEAPON_PHYSICS = combatRules.weapons;
 
 export const STARTING_PROFILE = {
     coins: 1000000,
-    characters: ["sunfire"],
+    characters: ["olaal-babu", "ballin"],
     weapons: ["sutli"],
     parryTools: [],
     equippedWeaponId: "sutli"

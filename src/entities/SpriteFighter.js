@@ -3,10 +3,7 @@ import { DEFAULT_SPECIAL, MOVES, SPECIAL_MOVES } from "../data/combatMoves.js";
 
 const ATTACK_POSES = new Set([
     "jab",
-    "kick",
-    "sweep",
     "uppercut",
-    "shadowSweep",
     "spit",
     "throw",
     "hit"
@@ -18,6 +15,7 @@ export default class SpriteFighter extends Phaser.GameObjects.Sprite {
         this.sceneRef = scene;
         this.character = character;
         this.characterTint = character.tint;
+        this.baseTint = character.customSprite ? 0xffffff : character.tint;
         this.facing = 1;
         this.fighterScale = scene.fighterScale;
         this.baseSpriteScale = (5.4 * scene.scale.height) / 540;
@@ -26,10 +24,12 @@ export default class SpriteFighter extends Phaser.GameObjects.Sprite {
         this.actionToken = 0;
         this.currentMove = null;
         this.actionPhase = null;
+        this.meleeDamageMultiplier = 1;
+        this.meleeDamageBoostUntil = 0;
 
         scene.add.existing(this);
         this.setOrigin(0.5, 1)
-            .setTint(this.characterTint)
+            .setTint(this.baseTint)
             .setScale(this.fighterScale);
         this.setPose("idle", 0);
     }
@@ -51,11 +51,16 @@ export default class SpriteFighter extends Phaser.GameObjects.Sprite {
         if (this.currentPose === name) return;
         this.currentPose = name;
 
-        let animationKey = "fighter_idle_animation";
+        const prefix = this.character.customSprite
+            ? `fighter_${this.character.id}`
+            : "fighter";
+        let animationKey = `${prefix}_idle_animation`;
         if (name === "walk" || name === "jump") {
-            animationKey = "fighter_walking_animation";
+            animationKey = `${prefix}_walking_animation`;
         } else if (ATTACK_POSES.has(name)) {
-            animationKey = "fighter_spitting_animation";
+            animationKey = this.character.customSprite
+                ? `${prefix}_attack_animation`
+                : "fighter_spitting_animation";
         }
 
         if (this.anims.currentAnim?.key !== animationKey) {
@@ -70,6 +75,17 @@ export default class SpriteFighter extends Phaser.GameObjects.Sprite {
             return SPECIAL_MOVES[this.character.id] || DEFAULT_SPECIAL;
         }
         return MOVES[name] || null;
+    }
+
+    applyMeleeDamageBoost(multiplier, durationMs, now) {
+        this.meleeDamageMultiplier = multiplier;
+        this.meleeDamageBoostUntil = now + durationMs;
+    }
+
+    getMeleeDamageMultiplier(now) {
+        return now < this.meleeDamageBoostUntil
+            ? this.meleeDamageMultiplier
+            : 1;
     }
 
     perform(name, callbacks = {}) {
@@ -92,6 +108,9 @@ export default class SpriteFighter extends Phaser.GameObjects.Sprite {
             this.actionPhase = "active";
             this.setPose(move.pose);
             if (move.effectColor) this.showSpecialEffect(move.effectColor);
+            if (move.specialEffect) {
+                this.sceneRef.showSpecialMoveEffect(this, move);
+            }
         });
 
         this.sceneRef.time.delayedCall(
@@ -172,7 +191,7 @@ export default class SpriteFighter extends Phaser.GameObjects.Sprite {
         this.setPose("hit");
         this.sceneRef.time.delayedCall(260, () => {
             if (!this.active) return;
-            this.setTint(this.characterTint);
+            this.setTint(this.baseTint);
             if (!this.isActing) {
                 this.currentPose = null;
                 this.setPose("idle");

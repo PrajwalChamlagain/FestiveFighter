@@ -23,8 +23,15 @@ export function loadPlayerProfile() {
         if (!valid) throw new Error("Saved profile has an invalid shape.");
 
         const characters = [...new Set(
-            profile.characters.filter(id => CHARACTERS.some(character => character.id === id))
+            profile.characters
+                .map(id => {
+                    if (id === "sunfire") return "olaal-babu";
+                    if (id === "shadow") return "laure";
+                    return id;
+                })
+                .filter(id => CHARACTERS.some(character => character.id === id))
         )];
+        if (!characters.includes("ballin")) characters.push("ballin");
         const weapons = [...new Set(
             profile.weapons.filter(id => WEAPONS.some(weapon => weapon.id === id))
         )];

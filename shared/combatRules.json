@@ -1,5 +1,6 @@
 {
   "maxHealth": 150,
+  "characters": ["olaal-babu", "laure", "royal", "harke", "ballin"],
   "arena": {
     "width": 960,
     "height": 540,
@@ -41,12 +42,7 @@
   },
   "abilities": {
     "special": { "cooldownMs": 3400, "botCooldownMs": 3900 },
-    "parry": { "windowMs": 80, "contactRadius": 7, "cooldownMs": 1200, "botCooldownMs": 1000 },
-    "spit": {
-      "cooldownMs": 950, "damage": 15, "speed": 700,
-      "lifetimeSeconds": 1.65, "hitRadius": 10, "poseDurationMs": 320,
-      "knockback": 235, "lift": 115
-    },
+    "parry": { "windowMs": 160, "contactRadius": 12, "cooldownMs": 1200, "botCooldownMs": 1000 },
     "rocketAim": { "displaySize": 44, "spriteForwardOffset": 0.7853981633974483, "trajectoryStep": 0.06 }
   }
 }

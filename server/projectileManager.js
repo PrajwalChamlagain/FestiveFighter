@@ -33,7 +33,6 @@ class ProjectileManager {
           crouching: false
         },
         weaponReadyAt: 0,
-        spitReadyAt: 0,
         parryReadyAt: 0,
         parryUntil: 0,
         requestTimes: [],
@@ -70,10 +69,6 @@ class ProjectileManager {
       return;
     }
 
-    if (request.type === "spit") {
-      this.launchSpit(matchId, match, player, request);
-      return;
-    }
     if (request.type !== "firework" && request.type !== "anar") {
       this.reject(playerId, request.requestId, request.type, "invalid-action");
       return;
@@ -185,46 +180,6 @@ class ProjectileManager {
     });
   }
 
-  launchSpit(matchId, match, player, request) {
-    const now = Date.now();
-    const spit = this.rules.abilities.spit;
-    if (now < player.spitReadyAt) {
-      this.reject(player.id, request.requestId, request.type, "cooldown");
-      return;
-    }
-    if (match.projectiles.size >= MAX_ACTIVE_PROJECTILES) {
-      this.reject(player.id, request.requestId, request.type, "projectile-limit");
-      return;
-    }
-
-    const direction = player.state.facing;
-    const projectile = {
-      projectileId: `p-${this.nextProjectileId++}`,
-      kind: "spit",
-      ownerId: player.id,
-      x: player.state.x + direction * 38,
-      y: player.state.y - 100 * this.rules.arena.fighterScale,
-      velocityX: direction * spit.speed,
-      age: 0,
-      lifetime: spit.lifetimeSeconds,
-      damage: spit.damage,
-      hitRadius: spit.hitRadius,
-      knockback: spit.knockback,
-      lift: spit.lift,
-      color: 0xc3ee7a,
-      requestId: request.requestId,
-      createdAt: now
-    };
-    match.projectiles.set(projectile.projectileId, projectile);
-    player.spitReadyAt = now + spit.cooldownMs;
-    this.io.to(matchId).emit("projectile:launched", {
-      ...projectile,
-      cooldownMs: spit.cooldownMs,
-      poseDurationMs: spit.poseDurationMs,
-      serverTime: now
-    });
-  }
-
   requestDetonation(matchId, playerId, projectileId) {
     const match = this.matches.get(matchId);
     const projectile = match?.projectiles.get(projectileId);
@@ -292,28 +247,6 @@ class ProjectileManager {
 
   stepMatch(matchId, match, dt, now) {
     for (const projectile of [...match.projectiles.values()]) {
-      if (projectile.kind === "spit") {
-        const reason = this.physics.advanceSpitProjectile(
-          projectile,
-          dt,
-          this.rules.arena
-        );
-        const target = [...match.players.values()].find(player => player.id !== projectile.ownerId && player.health > 0);
-        if (target && this.physics.projectileTouchesFighter(
-          projectile.x,
-          projectile.y,
-          target.state.x,
-          target.state.y,
-          this.rules.arena.fighterScale,
-          projectile.hitRadius
-        )) {
-          this.impactSpit(matchId, match, projectile, target);
-        } else if (reason) {
-          this.destroyProjectile(matchId, match, projectile, reason);
-        }
-        continue;
-      }
-
       const reason = this.physics.advanceProjectile(
         projectile,
         dt,
@@ -375,15 +308,6 @@ class ProjectileManager {
       return true;
     }
     return false;
-  }
-
-  impactSpit(matchId, match, projectile, target) {
-    const direction = Math.sign(projectile.velocityX) || 1;
-    const outcome = this.applyOutcome(target, projectile.damage, {
-      vx: target.state.vx + direction * projectile.knockback,
-      vy: target.state.vy - projectile.lift
-    }, "torso");
-    this.emitImpact(matchId, match, projectile, "spit-hit", [outcome]);
   }
 
   impactFirework(matchId, match, projectile, reason) {

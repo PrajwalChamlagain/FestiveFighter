@@ -52,14 +52,6 @@ export function advanceProjectile(projectile, dt, platforms, bounds) {
   return null;
 }
 
-export function advanceSpitProjectile(projectile, dt, bounds) {
-  projectile.age += dt;
-  projectile.x += projectile.velocityX * dt;
-  if (projectile.age >= projectile.lifetime) return "fuse";
-  if (projectile.x < -30 || projectile.x > bounds.width + 30) return "bounds";
-  return null;
-}
-
 export function getFighterHurtboxes(x, y, scale) {
   const rect = (zone, offsetY, width, height) => ({
     zone,

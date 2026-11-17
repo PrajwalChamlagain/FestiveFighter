@@ -1,9 +1,8 @@
 # Festive Fighter: code and gameplay guide
 
 This guide describes the current code, not a planned architecture. The game is
-a local browser game built with Phaser 4 and Vite. Its current menu starts
-single-player matches against a CPU bot; it does not connect to a server or
-provide online multiplayer.
+a browser game built with Phaser 4 and Vite. Its menu supports single-player
+matches against a CPU bot and unranked LAN matchmaking over Socket.IO.
 
 Screenshots of the username screen, fighter menu, live match, and rocket aim
 preview are attached to the task conversation.
@@ -15,7 +14,7 @@ index.html
   └─ src/main.js: creates the Phaser game
       └─ BootScene: loads shared assets and the arena background
           └─ MenuScene: username → fighter menu / shop
-              └─ MatchScene: player vs. BotAI in diwaliArena
+              └─ MatchScene: player vs. BotAI or a LAN opponent
 ```
 
 - [`index.html`](../index.html) supplies the `#game` element, page sizing, and
@@ -36,16 +35,23 @@ scene flow, not sent to an authentication service. The login is a Phaser DOM
 input, so `clearScreen()` removes its DOM node as well as Phaser display
 objects when the menu changes screens.
 
-The shop reads the item lists in [`src/data/catalog.js`](../src/data/catalog.js)
-and saves purchases/equipped weapons through
-[`src/data/playerProfile.js`](../src/data/playerProfile.js). The profile is
-stored in browser `localStorage` under `festive-fighter-profile`; there is no
-account database. Invalid saved JSON is reported in the console and replaced
-with a fresh profile. Current development profiles have 1,000,000 coins.
+The play screen lists owned fighters vertically on the left; selecting a row
+sets the fighter used by the next match. The shop reads the item lists in
+[`src/data/catalog.js`](../src/data/catalog.js) and saves purchases and
+equipped weapons through [`src/data/playerProfile.js`](../src/data/playerProfile.js).
+The profile is stored in browser `localStorage` under
+`festive-fighter-profile`; there is no account database. Invalid saved JSON is
+reported in the console and replaced with a fresh profile. Current development
+profiles have 1,000,000 coins.
+Weapon and parry-tool shop entries use original SVG icons from
+[`src/assets/shop/`](../src/assets/shop).
+Ballin is available to play without purchase; existing profiles are granted
+the character automatically.
 
 `startMatch()` sends the selected fighter and weapon plus randomized bot
-fighter, weapon, and parry gear to `MatchScene`. Shop ownership and the player
-weapon are persisted; the opponent's random loadout is not.
+fighter, weapon, and parry gear to `MatchScene`, along with the selected bot
+difficulty. Shop ownership and the player weapon are persisted; the opponent's
+random loadout is not.
 
 ## 3. Important source folders and files
 
@@ -55,11 +61,13 @@ weapon are persisted; the opponent's random loadout is not.
 | [`src/entities/SpriteFighter.js`](../src/entities/SpriteFighter.js) | Fighter sprite poses, action timing, hurtboxes, and melee hitboxes |
 | [`src/entities/BotAI.js`](../src/entities/BotAI.js) | Bot movement, spacing, attacks, projectile throws, and evasion |
 | [`src/data/catalog.js`](../src/data/catalog.js) | Characters, weapons, parry gear, weapon physics, and starting profile |
-| [`src/data/combatMoves.js`](../src/data/combatMoves.js) | Jab, kick, sweep, and character special move definitions |
-| [`src/data/abilities.js`](../src/data/abilities.js) | Tunable spit and aimed-rocket presentation values |
-| [`src/systems/abilities/`](../src/systems/abilities) | Isolated spit projectile and manual rocket aiming behavior |
+| [`src/data/combatMoves.js`](../src/data/combatMoves.js) | Jab and character-specific special move definitions |
+| [`src/data/abilities.js`](../src/data/abilities.js) | Shared special cooldown, parry, and aimed-rocket values |
+| [`src/systems/abilities/`](../src/systems/abilities) | Manual rocket aiming behavior |
 | [`src/maps/diwaliArena.js`](../src/maps/diwaliArena.js) | Arena image, image dimensions, and platform collision layout |
-| [`src/assets/sprites/`](../src/assets/sprites) | Idle, walk, spit, explosion, and large rocket artwork |
+| [`src/assets/characters/`](../src/assets/characters) | Original Laure, Harke, and Ballin portraits and fighter sheets |
+| [`src/assets/sprites/`](../src/assets/sprites) | Fighter animations, special effects, ember herb, explosion, and rocket artwork |
+| [`src/assets/shop/`](../src/assets/shop) | Original shop icons for fireworks and parry gear |
 | [`src/assets/arena-background/`](../src/assets/arena-background) | Diwali combat background |
 | [`src/assets/login-arena/`](../src/assets/login-arena) | Login/menu background |
 
@@ -75,9 +83,8 @@ coordinates are expressed against the 1024×576 source image. `MatchScene`
 converts them to the current viewport and uses those entries for landing,
 shadow placement, and projectile bounce checks.
 
-The orange platform debug lines have been removed from the rendered scene.
-The map entries themselves remain as collision platforms, so removing the
-debug drawing does not remove the two elevated landing surfaces.
+Press F1 during a match to display platform collision tops alongside fighter
+hurtboxes and the latest melee hitbox.
 
 `MatchScene.updatePhysics()` integrates horizontal velocity, gravity, platform
 landings, arena boundaries, and fighter shadows. The player moves with A/D or
@@ -91,20 +98,20 @@ handled in `handleInput()`. Melee moves include small lunge values from
 | --- | --- | --- |
 | Move | A / D or ← / → | Horizontal movement and air control |
 | Jump | W / Space / ↑ | Jump while grounded |
-| Crouch | S / ↓ | Lowers movement speed; kick becomes a sweep |
-| Punch | J | Quick jab |
-| Kick | K | Front kick; while crouching, a leg sweep |
-| Spit | G | Fast, long-range green projectile |
-| Character special | E | Character-specific move on cooldown |
+| Crouch | S / ↓ | Lowers movement speed |
+| Punch | J | Quick jab; repeated jabs have a short cooldown |
+| Character special | E | Character-specific move on cooldown; Olaal Babu's spit is a close-range melee strike |
 | Firework | F | Throw/detonate normal fireworks; with Anar, aim and release |
 | Parry | R | Short projectile-reflect window; requires parry gear |
 | Cancel rocket aim | Esc | Cancels an active Anar aim |
-| Hitbox overlay | F1 | Toggles fighter hurtboxes and the latest melee hitbox |
+| Collision overlay | F1 | Toggles platform tops, fighter hurtboxes, and the latest melee hitbox |
 
-The combat HUD repeats the core controls. The F button is also clickable; for
-Anar, clicking it starts aim mode and clicking the arena launches. On keyboard,
-hold F, aim with the mouse, then release F. The rocket trajectory preview
-updates while aiming.
+The combat HUD repeats the core controls. Its F, E, and R circles show a
+recharge ring and seconds remaining; when ready, they also show the move's
+full cooldown. The F button is clickable; for Anar, clicking it starts aim
+mode and clicking the arena launches. On keyboard, hold F, aim with the mouse,
+then release F. The rocket trajectory preview updates while aiming. The shop
+also lists cooldown duration for each fighter special, weapon, and parry tool.
 
 ## 6. Combat and bot behavior
 
@@ -113,8 +120,9 @@ input, physics, collision, cooldowns, and effects. Each fighter starts with
 150 health. `SpriteFighter` defines moves by windup, active, and recovery
 phases; `MatchScene` checks the resulting attack rectangle against head,
 torso, and leg hurtboxes. Head hits deal 1.5× base damage, torso 1×, and legs
-0.8×. Hits apply knockback, lift, a short stun, camera shake, and expanding
-impact sparks.
+0.8×. Jabs have a 500 ms player cooldown; the bot waits 900 ms between jabs so
+its stun cannot be chained into a continuous lock. Hits apply knockback, lift,
+a short stun, camera shake, and expanding impact sparks.
 
 [`src/entities/BotAI.js`](../src/entities/BotAI.js) thinks on a short interval,
 keeps a preferred distance, attacks, throws weapons, jumps away from threats,
@@ -122,26 +130,32 @@ and attempts to parry if equipped. When the player stands still and the bot is
 in its preferred-distance band, the bot now paces/repositions instead of
 remaining idle. It also drifts slightly during attack animations.
 
+The menu's bot difficulty selector offers Easy, Normal, Hard, and Super Hard.
+The presets change reaction cadence, movement speed, attack and jump cooldowns,
+and the chance of defending with evasion or parries. Normal preserves the
+original bot tuning; LAN matches do not use bot difficulty.
+
 Parry is handled in `MatchScene.beginParry()` and `tryReflectProjectiles()`.
 It only works with the Brass Puja Thali and can reflect a projectile during a
-brief timing window. The menu shop unlocks that gear.
+160 ms timing window. “Perfect parry” feedback appears only after a projectile
+is actually reflected. The menu shop unlocks that gear.
 
 ## 7. Abilities and weapons
 
-The behavior is split into tuning data, focused ability systems, and the scene
-integration points:
+Character specials are defined in `src/data/combatMoves.js`. Olaal Babu's spit
+is a high-damage, close-range melee attack, not a projectile or a separate G
+ability. Laure's khukuri slash has high damage, very short reach, and a 5
+second cooldown. Harke's shovel/dirt toss briefly stuns. Ballin's burning-herb
+animation grants a five-second, 1.35× melee damage boost, with an 8.5 second
+cooldown. Laure, Harke, and Ballin have original animated fighter sheets.
 
-- [`src/systems/abilities/SpitAbility.js`](../src/systems/abilities/SpitAbility.js)
-  creates, moves, collides, and cleans up spit shots. It uses the existing
-  `Spitting.png` fighter animation through the `spit` pose. The current tuning
-  is 15 damage, 700 px/s, 1.65 seconds of lifetime, and a 950 ms cooldown.
 - [`src/systems/abilities/RocketAimAbility.js`](../src/systems/abilities/RocketAimAbility.js)
   reproduces the older hold-to-aim/release-to-fire control using mouse world
   coordinates, a ballistic trajectory preview, and
   `firework-rocket-big.png`. It delegates the actual projectile/damage work to
   `MatchScene`.
-- [`src/data/abilities.js`](../src/data/abilities.js) holds special, parry,
-  spit, and rocket-aim tuning. [`src/data/catalog.js`](../src/data/catalog.js)
+- [`src/data/abilities.js`](../src/data/abilities.js) holds shared special,
+  parry, and rocket-aim tuning. [`src/data/catalog.js`](../src/data/catalog.js)
   holds each weapon's damage, blast radius, fuse, gravity, cooldown, and
   special properties.
 
@@ -162,8 +176,8 @@ and explosion path.
 
 1. Add character, weapon, or parry gear entries to `catalog.js`; define any
    weapon physics in `WEAPON_PHYSICS`.
-2. Add or tune a melee move in `combatMoves.js`. Use `SpriteFighter.getMove()`
-   for character-specific specials.
+2. Add a character's unique E move in `combatMoves.js`; preserve its `special`
+   move key so the opponent receives the matching move in online play.
 3. Keep a self-contained projectile/ability's state and cleanup in
    `src/systems/abilities/`; call it from `MatchScene` rather than growing the
    scene with another independent update loop.
@@ -175,11 +189,22 @@ and explosion path.
 ## 9. Run and validate
 
 ```sh
-npm install
-npm run dev
+npm ci
+npm test
 npm run build
 ```
 
-The `test` script in `package.json` is currently a placeholder, not a working
-test suite. The game currently has no networking, matchmaking, server-side
-damage verification, or multiplayer party codes.
+For a LAN match, run `npm run server` in one terminal and
+`npm run dev -- --host 0.0.0.0` in another on the host computer. Open
+`http://<host-computer-ip>:5173` on each device; the client connects to the
+server on port 3000 at that same host. Allow ports 3000 and 5173 through the
+host's private-network firewall. This setup is for the same local network and
+does not make the game available over the internet.
+
+The queue is unranked and FIFO: the server pairs any two waiting players. It
+does not store ratings or match history. Match state is in memory, and clients
+report movement, health, and melee results, so this is not cheat-resistant
+multiplayer.
+
+`npm test` runs Node's built-in tests for matchmaking, fighter selection
+sync, rejected kick attacks, and bounded special-move stun values.

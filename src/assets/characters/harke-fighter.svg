@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" shape-rendering="crispEdges">
+  <defs>
+    <g id="core">
+      <path d="M4 5V3h2V2h6v2h2v4h-2v3H5V9H4z" fill="#25272a"/>
+      <path d="M5 5h7v7h-1v2H6v-2H5z" fill="#9a6348"/>
+      <path d="M6 7h1v1H6zm4 0h1v1h-1z" fill="#171b1f"/>
+      <path d="M7 10h4v1H7z" fill="#332522"/>
+      <path d="M7 12h4v2H7z" fill="#9a6348"/>
+      <path d="M4 14h8v8H4z" fill="#263e4d"/>
+      <path d="M5 15h6v1H5zm0 2h2v2H5zm4 0h2v2H9z" fill="#39596a"/>
+      <path d="M4 20h8v2H4z" fill="#192d39"/>
+      <path d="M7 13h3v1H7z" fill="#c08a51"/>
+      <path d="M7 15h1v1H7zm3 0h1v1h-1z" fill="#c5a06e"/>
+    </g>
+    <g id="legsIdle">
+      <path d="M5 22h3v6H6v3H3v-2h1v-3H5zM9 22h3v5h1v3h-3v-2H9z" fill="#907044"/>
+      <path d="M3 29h4v2H2v-1h1zm7 0h4v2h-4z" fill="#343437"/>
+      <path d="M5 23h2v1H5zm5 0h2v1h-2z" fill="#b5955d"/>
+    </g>
+    <g id="legsStepA">
+      <path d="M5 22h3v5H7v2H5v-2H4v-3h1zm4 0h3v4h2v3h-3v-2H9z" fill="#907044"/>
+      <path d="M4 28h4v2H3v-1h1zm8 0h3v2h-4v-1h1z" fill="#343437"/>
+      <path d="M5 23h2v1H5zm5 0h2v1h-2z" fill="#b5955d"/>
+    </g>
+    <g id="legsStepB">
+      <path d="M5 22h3v4H6v3H3v-2h1v-2h1zm4 0h3v5h1v2h-3v-2H9z" fill="#907044"/>
+      <path d="M3 28h4v2H2v-1h1zm8 0h4v2h-4z" fill="#343437"/>
+      <path d="M5 23h2v1H5zm5 0h2v1h-2z" fill="#b5955d"/>
+    </g>
+    <g id="armsIdle">
+      <path d="M3 15H2v5h2v-2h1v-2H4v-1zm9 0h1v5h-2v-2h-1v-2h1v-1z" fill="#263e4d"/>
+      <path d="M2 19h2v2H2zm10 0h2v2h-2z" fill="#9a6348"/>
+      <path d="M2 16h1v2H2zm10 0h1v2h-1z" fill="#527285"/>
+    </g>
+    <g id="armsSwingA">
+      <path d="M3 15H2v4h2v-1h1v-2H4v-1zm9 0h1v4h-2v-1h-1v-2h1v-1z" fill="#263e4d"/>
+      <path d="M2 18h2v2H2zm10 0h2v2h-2z" fill="#9a6348"/>
+    </g>
+    <g id="armsSwingB">
+      <path d="M3 15H2v5h2v-2h1v-2H4v-1zm9 0h1v5h-2v-2h-1v-2h1v-1z" fill="#263e4d"/>
+      <path d="M2 19h2v2H2zm10 0h2v2h-2z" fill="#9a6348"/>
+    </g>
+    <g id="attackA">
+      <path d="M3 15H2v4h2v-1h2v-2H4v-1zM11 15h2v2h2v2h-2v-1h-2z" fill="#263e4d"/>
+      <path d="M2 18h2v2H2zm12 0h2v2h-2z" fill="#9a6348"/>
+      <path d="M12 17l3-7 1 1-2 7z" fill="#785236"/>
+      <path d="M14 9h4v3h-4z" fill="#c8c9bd"/>
+      <path d="M15 10h2v1h-2z" fill="#e1dfcf"/>
+    </g>
+    <g id="attackB">
+      <path d="M3 15H2v4h2v-1h2v-2H4v-1zM11 15h2v1h2v2h-2v-1h-2z" fill="#263e4d"/>
+      <path d="M2 18h2v2H2zm12-1h2v2h-2z" fill="#9a6348"/>
+      <path d="M12 16l4-6 1 1-3 7z" fill="#785236"/>
+      <path d="M15 8h4v3h-4z" fill="#c8c9bd"/>
+      <path d="M16 9h2v1h-2z" fill="#e1dfcf"/>
+    </g>
+    <g id="idleA">
+      <use href="#legsIdle"/>
+      <use href="#core"/>
+      <use href="#armsIdle"/>
+    </g>
+    <g id="idleB">
+      <use href="#legsIdle"/>
+      <use href="#core" y="-1"/>
+      <use href="#armsIdle" y="-1"/>
+    </g>
+    <g id="walkA">
+      <use href="#legsStepA"/>
+      <use href="#core"/>
+      <use href="#armsSwingA"/>
+    </g>
+    <g id="walkB">
+      <use href="#legsStepB"/>
+      <use href="#core"/>
+      <use href="#armsSwingB"/>
+    </g>
+    <g id="attackFrameA">
+      <use href="#legsIdle"/>
+      <use href="#core"/>
+      <use href="#attackA"/>
+    </g>
+    <g id="attackFrameB">
+      <use href="#legsIdle"/>
+      <use href="#core"/>
+      <use href="#attackB"/>
+    </g>
+  </defs>
+  <g id="idleRow">
+    <use href="#idleA"/><use href="#idleB" x="16"/><use href="#idleA" x="32"/>
+    <use href="#idleB" x="48"/><use href="#idleA" x="64"/><use href="#idleB" x="80"/>
+  </g>
+  <g id="walkRow" transform="translate(0 32)">
+    <use href="#walkA"/><use href="#walkB" x="16"/><use href="#walkA" x="32"/>
+    <use href="#walkB" x="48"/><use href="#walkA" x="64"/><use href="#walkB" x="80"/>
+  </g>
+  <g id="attackRow" transform="translate(0 64)">
+    <use href="#attackFrameA"/><use href="#attackFrameA" x="16"/><use href="#attackFrameB" x="32"/>
+    <use href="#attackFrameB" x="48"/><use href="#attackFrameA" x="64"/><use href="#attackFrameB" x="80"/>
+  </g>
+</svg>

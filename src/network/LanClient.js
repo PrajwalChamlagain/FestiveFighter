@@ -1,16 +1,6 @@
 import { io } from "socket.io-client";
 
 function getServerUrl() {
-  const configuredUrl = import.meta.env.VITE_SERVER_URL?.trim();
-  if (configuredUrl) return configuredUrl;
-
-  // Netlify serves the game and multiplayer server from one origin in both
-  // local Netlify Dev and production. Vite's standalone dev server stays on
-  // the existing separate multiplayer port.
-  if (window.location.protocol === "https:" || window.location.port !== "5173") {
-    return window.location.origin;
-  }
-
   const hostname = window.location.hostname || "localhost";
   return `http://${hostname}:3000`;
 }
