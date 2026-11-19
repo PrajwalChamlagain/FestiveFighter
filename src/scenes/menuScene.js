@@ -14,7 +14,6 @@ import {
   isBotDifficulty
 } from "../data/botDifficulty.mjs";
 import { loadPlayerProfile, savePlayerProfile } from "../data/playerProfile.js";
-import LanClient from "../network/LanClient.js";
 import laurePortraitUrl from "../assets/characters/laure.svg";
 import harkePortraitUrl from "../assets/characters/harke.svg";
 import ballinPortraitUrl from "../assets/characters/ballin.svg";
@@ -69,7 +68,6 @@ export default class MenuScene extends Phaser.Scene {
   }
 
   create() {
-    this.events.once("shutdown", this.cleanupLanConnection, this);
     this.profile = loadPlayerProfile();
     if (!this.profile.characters.includes(this.playerCharacterId)) {
       this.playerCharacterId = this.profile.characters[0];
@@ -197,12 +195,6 @@ export default class MenuScene extends Phaser.Scene {
       this.drawShop();
     } else {
       this.drawPlayMenu();
-      if (this.lanError) {
-        this.add.text(width / 2, 515, this.lanError, {
-          fontSize: "11px",
-          color: "#ffaaa0"
-        }).setOrigin(0.5);
-      }
     }
   }
 
@@ -279,125 +271,10 @@ export default class MenuScene extends Phaser.Scene {
       width: 230,
       fontSize: "15px"
     });
-    this.addButton(previewX, 444, "LAN MATCH", () => this.startLanMatch(), {
-      width: 230,
-      fontSize: "15px"
-    });
-    this.addButton(previewX, 483, "SHOP", () => this.showLobby("shop"), {
+    this.addButton(previewX, 444, "SHOP", () => this.showLobby("shop"), {
       width: 190,
       fontSize: "14px"
     });
-  }
-
-  startLanMatch() {
-    if (!this.profile.characters.includes(this.playerCharacterId) ||
-        !this.profile.weapons.includes(this.profile.equippedWeaponId)) {
-      this.showLobby("shop");
-      return;
-    }
-
-    this.lanError = "";
-    this.lanTransferred = false;
-    this.lanClient = new LanClient();
-    this.showLanWaiting("Connecting to the multiplayer server…");
-
-    this.lanSubscriptions = [
-      this.lanClient.on("connected", () => {
-        this.setLanWaitingMessage("Connected. Finding another player…");
-      }),
-      this.lanClient.on("waiting", () => {
-        this.setLanWaitingMessage("Waiting for another player to join…");
-      }),
-      this.lanClient.on("match-found", match => this.enterLanMatch(match)),
-      this.lanClient.on("match:error", () => {
-        this.failLanMatch("Your multiplayer loadout is not available on the server.");
-      }),
-      this.lanClient.on("connection-error", () => {
-        this.failLanMatch("Could not connect. Check the server address and firewall.");
-      }),
-      this.lanClient.on("disconnected", () => {
-        if (!this.lanTransferred && this.lanClient) {
-          this.failLanMatch("Connection lost while waiting for a match.");
-        }
-      })
-    ];
-
-    this.lanClient.connectAndJoin({
-      weaponId: this.profile.equippedWeaponId,
-      characterId: this.playerCharacterId,
-      weapons: this.profile.weapons,
-      parryToolId: this.profile.parryTools.includes(PARRY_TOOLS[0].id)
-        ? PARRY_TOOLS[0].id
-        : null,
-      parryTools: this.profile.parryTools
-    });
-  }
-
-  showLanWaiting(message) {
-    this.clearScreen();
-    const { width, height } = this.scale;
-    this.drawBackground();
-    this.add.rectangle(width / 2, height / 2, 520, 220, 0x111827, 0.93)
-      .setStrokeStyle(2, 0xfbbf24, 0.75);
-    this.add.text(width / 2, height / 2 - 62, "LAN MATCH", {
-      fontSize: "24px",
-      fontStyle: "bold",
-      color: "#ffc107"
-    }).setOrigin(0.5);
-    this.lanWaitingText = this.add.text(width / 2, height / 2 - 5, message, {
-      fontSize: "15px",
-      color: "#fff1d4",
-      align: "center",
-      wordWrap: { width: 430 }
-    }).setOrigin(0.5);
-    this.addButton(width / 2, height / 2 + 65, "CANCEL", () => {
-      this.lanError = "";
-      this.cleanupLanConnection();
-      this.showLobby("play");
-    }, { width: 140, fontSize: "13px" });
-  }
-
-  setLanWaitingMessage(message) {
-    if (this.lanWaitingText?.active) this.lanWaitingText.setText(message);
-  }
-
-  enterLanMatch(match) {
-    if (!this.lanClient || this.lanTransferred) return;
-
-    const lanClient = this.lanClient;
-    this.lanTransferred = true;
-    this.clearLanSubscriptions();
-    this.lanClient = null;
-    this.scene.start("MatchScene", {
-      username: this.username,
-      mode: "lan",
-      characterId: this.playerCharacterId,
-      opponentCharacterId: match.opponentCharacterId || CHARACTERS[0].id,
-      weaponId: this.profile.equippedWeaponId,
-      parryToolId: this.profile.parryTools.includes(PARRY_TOOLS[0].id)
-        ? PARRY_TOOLS[0].id
-        : null,
-      lanMatch: match,
-      lanClient
-    });
-  }
-
-  failLanMatch(message) {
-    if (!this.lanClient) return;
-    this.cleanupLanConnection();
-    this.lanError = message;
-    this.showLobby("play");
-  }
-
-  clearLanSubscriptions() {
-    this.lanSubscriptions?.forEach(unsubscribe => unsubscribe());
-    this.lanSubscriptions = [];
-  }
-
-  cleanupLanConnection() {
-    this.clearLanSubscriptions();
-    this.lanClient?.destroy();
-    this.lanClient = null;
   }
 
   drawShop() {
