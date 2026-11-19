@@ -10,9 +10,10 @@ Festive Fighter is a browser-based 2D fighting game set in a Diwali arena. Pick 
 - **Use fireworks as weapons.** Sutli, Firecracker, Anar Rocket, and Chakri each have distinct projectile behavior. Firecracker can launch its user; Anar can be aimed with a trajectory preview before launch.
 - **Parry projectiles.** Equip the Brass Puja Thali in the shop and time a parry to reflect an incoming projectile.
 - **Unlock and equip items.** The shop offers fighters, fireworks, and parry gear. Your profile, purchases, and equipped weapon are saved in this browser.
-## Controls
 
-| Action | Keyboard |🎮
+## Controls🕹️
+
+| Action | Keyboard |
 | --- | --- |
 | Move | A / D or ← / → |
 | Jump | W / Space / ↑ |
