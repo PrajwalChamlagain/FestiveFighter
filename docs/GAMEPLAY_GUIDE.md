@@ -2,7 +2,7 @@
 
 This guide describes the current code, not a planned architecture. The game is
 a browser game built with Phaser 4 and Vite. Its menu supports single-player
-matches against a CPU bot and unranked LAN matchmaking over Socket.IO.
+matches against a CPU bot.
 
 Screenshots of the username screen, fighter menu, live match, and rocket aim
 preview are attached to the task conversation.
@@ -14,7 +14,7 @@ index.html
   └─ src/main.js: creates the Phaser game
       └─ BootScene: loads shared assets and the arena background
           └─ MenuScene: username → fighter menu / shop
-              └─ MatchScene: player vs. BotAI or a LAN opponent
+              └─ MatchScene: player vs. BotAI
 ```
 
 - [`index.html`](../index.html) supplies the `#game` element, page sizing, and
@@ -133,7 +133,7 @@ remaining idle. It also drifts slightly during attack animations.
 The menu's bot difficulty selector offers Easy, Normal, Hard, and Super Hard.
 The presets change reaction cadence, movement speed, attack and jump cooldowns,
 and the chance of defending with evasion or parries. Normal preserves the
-original bot tuning; LAN matches do not use bot difficulty.
+original bot tuning.
 
 Parry is handled in `MatchScene.beginParry()` and `tryReflectProjectiles()`.
 It only works with the Brass Puja Thali and can reflect a projectile during a
@@ -177,7 +177,7 @@ and explosion path.
 1. Add character, weapon, or parry gear entries to `catalog.js`; define any
    weapon physics in `WEAPON_PHYSICS`.
 2. Add a character's unique E move in `combatMoves.js`; preserve its `special`
-   move key so the opponent receives the matching move in online play.
+   move key so the player special control triggers it.
 3. Keep a self-contained projectile/ability's state and cleanup in
    `src/systems/abilities/`; call it from `MatchScene` rather than growing the
    scene with another independent update loop.
@@ -194,17 +194,4 @@ npm test
 npm run build
 ```
 
-For a LAN match, run `npm run server` in one terminal and
-`npm run dev -- --host 0.0.0.0` in another on the host computer. Open
-`http://<host-computer-ip>:5173` on each device; the client connects to the
-server on port 3000 at that same host. Allow ports 3000 and 5173 through the
-host's private-network firewall. This setup is for the same local network and
-does not make the game available over the internet.
-
-The queue is unranked and FIFO: the server pairs any two waiting players. It
-does not store ratings or match history. Match state is in memory, and clients
-report movement, health, and melee results, so this is not cheat-resistant
-multiplayer.
-
-`npm test` runs Node's built-in tests for matchmaking, fighter selection
-sync, rejected kick attacks, and bounded special-move stun values.
+`npm test` runs the Node.js tests for bot difficulty and attack cooldowns.

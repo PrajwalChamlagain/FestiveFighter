@@ -32,7 +32,6 @@ For Anar Rocket, hold **F**, aim with the mouse, then release **F** to fire. The
 - `src/scenes/` — boot, menu, shop, and match scenes
 - `src/entities/` — fighter behavior and bot AI
 - `src/data/` — fighters, moves, weapons, abilities, and saved profile handling
-- `src/network/` and `server/` — LAN client, matchmaking, and projectile synchronization
 - `shared/` — combat rules and projectile physics shared across the game
 - `src/maps/` and `src/assets/` — arena layout and game artwork
 - `docs/GAMEPLAY_GUIDE.md` — detailed gameplay and code guide

@@ -1,0 +1,19 @@
+{
+	"geolocation": {
+		"data": {
+			"city": "Itahari",
+			"country": {
+				"code": "NP",
+				"name": "Nepal"
+			},
+			"subdivision": {
+				"code": "P1",
+				"name": "Koshi"
+			},
+			"timezone": "Asia/Kathmandu",
+			"latitude": 26.6661,
+			"longitude": 87.2878
+		},
+		"timestamp": 1794831720400
+	}
+}
