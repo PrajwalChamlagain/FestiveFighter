@@ -1,7 +1,6 @@
 # Festive Fighter🥊
 
-Festive Fighter is a browser-based 2D fighting game set in a Diwali arena. Pick a fighter, build a loadout, and battle a CPU opponent or another player on your local network. It is built with Phaser 4 and JavaScript; Vite serves the game and Socket.IO powers LAN matches.
-
+Festive Fighter is a browser-based 2D fighting game set in a Diwali arena. Pick a fighter, build a loadout, and battle a CPU opponent.
 ## What you can do ⚙️
 
 - **Play solo against a bot.** Choose Easy, Normal, Hard, or Super Hard difficulty. The bot moves, attacks, throws fireworks, evades, and can parry when equipped.
